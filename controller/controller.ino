@@ -1,6 +1,6 @@
 //
 // term project 2024 controller code
-// adapedted from mme4487 lab 4 controller code
+// adapted from mme4487 lab 4 controller code
 // lab 004, team 1
 // 
 
@@ -35,6 +35,7 @@ typedef struct {
   int speed;                                          //pot value from 0-4095
   bool left;                                          //is left button pressed?
   bool right;                                         //is right button pressed?
+  int waterSpeed;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
@@ -78,7 +79,8 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 // added content
 Button buttonLeft = {13, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
-int potPin = 34;
+int motorPotPin = ;
+int waterPotPin = ;
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -190,41 +192,44 @@ void loop() {
     
     // if drive appears disconnected, update control signal to stop before sending
     if (commsLossCount > cMaxDroppedPackets) {
-      controlData.dir = 0;
-    }
+        controlData.dir = 0;
+      }
     // send control signal to drive
     if (peer->send_message((const uint8_t *) &controlData, sizeof(controlData))) {
       digitalWrite(cStatusLED, 1);                    // if successful, turn on communucation status LED
-    }
-    else {
-      digitalWrite(cStatusLED, 0);                    // otherwise, turn off communication status LED
-    }
+      }
+      else {
+        digitalWrite(cStatusLED, 0);                    // otherwise, turn off communication status LED
+      }
 
     // speed control
-    controlData.speed = analogRead(potPin);               //Pot value sent as a variable in the structure
+    int motorSpeed = analogRead(motorPotPin);               //Pot value sent as a variable in the structure
+    int waterSpeed = analogRead(waterPotPin);               //Pot value sent as a variable in the structure
+    controlData.Speed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
+    controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
     //forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed
       controlData.dir = 1;
-    }
-    else if (!buttonRev.state) {                      // reverse pushbutton pressed
-      controlData.dir = -1;
-    }
-    else {                                            // no input, stop
-      controlData.dir = 0;
-    }
+      }
+      else if (!buttonRev.state) {                      // reverse pushbutton pressed
+        controlData.dir = -1;
+      }
+      else {                                            // no input, stop
+        controlData.dir = 0;
+      }
     
     // left and right button operation
     if (!buttonLeft.state) {                          // left button
       controlData.left = 1;
-    } else {                                         
-      controlData.left = 0;
-    }
-    if (!buttonRev.state) {                           // right button
-      controlData.dir = 1;
-    } else {             
-      controlData.right = 0;
-    }
+      } else {                                         
+        controlData.left = 0;
+      }
+      if (!buttonRev.state) {                           // right button
+        controlData.dir = 1;
+      } else {             
+        controlData.right = 0;
+      }
   }
 }
 

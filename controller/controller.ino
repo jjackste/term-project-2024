@@ -6,8 +6,8 @@
 
 //
 // main functions:
-// forward, reverse, left, right control
-// with tank turn
+// forward, reverse, left, right control with tank turn
+// control speed of dc motors
 // show status of:
 // colour sensor
 // water wheel
@@ -39,7 +39,7 @@ typedef struct {
 
 // Drive data packet structure
 typedef struct {
-  uint32_t time;                                      // time packet sent
+  uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
   int waterWheel;                                     // value of water wheel speed
@@ -78,6 +78,7 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 // added content
 Button buttonLeft = {13, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
+int potPin = 34;
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -136,7 +137,7 @@ public:
 ESP_NOW_Network_Peer *peer;
 
 void setup() {
-  Serial.begin(9600);                               // standard baud rate for ESP32 serial monitor
+  Serial.begin(115200);                               // standard baud rate for ESP32 serial monitor
   while (!Serial) {                                   // wait for Serial to start
     delay(10);                                        // okay to delay during setup
   }
@@ -199,7 +200,8 @@ void loop() {
       digitalWrite(cStatusLED, 0);                    // otherwise, turn off communication status LED
     }
 
-    controlData.speed = analogRead(34);               //Pot value sent as a variable in the structure
+    // speed control
+    controlData.speed = analogRead(potPin);               //Pot value sent as a variable in the structure
 
     //forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed

@@ -25,7 +25,6 @@
 #include "ESP32_NOW.h"
 #include "WiFi.h"
 #include <esp_mac.h>                                  // For the MAC2STR and MACSTR macros
-#include "Adafruit_TCS34725.h"
 
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
@@ -96,15 +95,9 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 
 // added content
 int cNumMotors = 3;
-int colorHigh = y;
-int colorLow = x;
-uint32_t senLastTime = 0;                                // last time of sensor control was updated
 const int cServoPin = ;                             // GPIO pin for servo motor
 const long cMinDutyCycle = 1650;                      // duty cycle for 0 degrees (adjust for motor if necessary)
 const long cMaxDutyCycle = 8300;                      
-int goodPos = 0;
-int badPos = 180;  
-int baselinePos = 90;
 
 // taken out of void loop
 float deltaT = 0;                                   // time interval
@@ -119,7 +112,6 @@ float eIntegral[] = {0, 0};                         // integral of error
 float u[] = {0, 0};                                 // PID control signal
 int pwm[] = {0, 0};                                 // motor speed(s), represented in bit resolution
 int dir[] = {1, 1};                                 // direction that motor should turn
-uint16_t r, g, b, c, colorTemp;                     // variables for sensor values                                    
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -238,28 +230,6 @@ void loop() {
     pos[k] = encoder[k].pos;                          // read and store current motor position
     }
   interrupts();                                       // turn interrupts back on
-
-  // color sensor time loop
-  uint32_t senTime = micros();                        // capture current time in microseconds
-  if (senTime - senLastTime > 10000) {                // wait ~10 ms
-    senLastTime = senTime;                               // update start time for next control cycle
-
-    // colour sensor 
-    tcs.getRawData(&r, &g, &b, &c);                     // gets raw data from r g b c channels
-    colorTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);    // converts raw data into single temp value
-    driveData.colorTemp = colorTemp; // send info back to controller
-
-    ledcWrite(cServoPin, degreesToDutyCycle(baselinePos));
-    
-    if (colorTemp >= colorLow) && (colorTemp <= colorHigh){
-        ledcWrite(cServoPin, degreesToDutyCycle(goodPos)); 
-      }
-  }
-
-  // time delay to allow for beads to fall off
-  uint32_t beadTime = millis();                        // capture current time in microseconds
-  if (beadTime - beadLastTime > 1000) {                // wait 1s
-  beadLastTime = beadTime;
 
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds

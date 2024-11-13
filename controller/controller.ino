@@ -15,7 +15,7 @@
 //
 
 
-// #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
+#define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
 // #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
@@ -68,19 +68,19 @@ const int cMaxDroppedPackets = 20;                    // maximum number of packe
 // Variables 
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint32_t commsLossCount = 0;                          // number of sequential sent packets have dropped
-Button buttonFwd = {14, 0, 0, false, true, true};     // forward, NO pushbutton on GPIO 14, low state when pressed
-Button buttonRev = {12, 0, 0, false, true, true};     // reverse, NO pushbutton on GPIO 12, low state when pressed
+Button buttonFwd = {12, 0, 0, false, true, true};     // forward, NO pushbutton on GPIO 14, low state when pressed
+Button buttonRev = {14, 0, 0, false, true, true};     // reverse, NO pushbutton on GPIO 12, low state when pressed
 
 // REPLACE WITH MAC ADDRESS OF YOUR DRIVE ESP32
-uint8_t receiverMacAddress[] = {0x,0x,0x,0x,0x,0x};  
+uint8_t receiverMacAddress[] = {0x88,0x13,0xBF,0x63,0x72,0x50};  
 esp_now_control_data_t controlData;                   // data packet to send to drive system
 esp_now_drive_data_t inData;                          // data packet from drive system
 
 // added content
-Button buttonLeft = {13, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
-Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
-int motorPotPin = ;
-int waterPotPin = ;
+Button buttonLeft = {27, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
+Button buttonRight = {33, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
+int motorPotPin = 34;
+int waterPotPin = 35;
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -125,6 +125,7 @@ public:
     if (success) {
   #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
+        Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right);
   #endif
       commsLossCount = 0;
     }
@@ -205,7 +206,7 @@ void loop() {
     // speed control
     int motorSpeed = analogRead(motorPotPin);               //Pot value sent as a variable in the structure
     int waterSpeed = analogRead(waterPotPin);               //Pot value sent as a variable in the structure
-    controlData.Speed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
+    controlData.speed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
     controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
     //forward and reverse button operation
@@ -222,14 +223,14 @@ void loop() {
     // left and right button operation
     if (!buttonLeft.state) {                          // left button
       controlData.left = 1;
-      } else {                                         
-        controlData.left = 0;
-      }
-      if (!buttonRev.state) {                           // right button
-        controlData.dir = 1;
-      } else {             
-        controlData.right = 0;
-      }
+    } else {                                         
+      controlData.left = 0;
+    }
+    if (!buttonRight.state) {                           // right button
+      controlData.right = 1;
+    } else {             
+      controlData.right = 0;
+    }
   }
 }
 

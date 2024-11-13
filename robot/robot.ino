@@ -19,7 +19,7 @@
 // #define SERIAL_STUDIO                                 // print formatted string, that can be captured and parsed by Serial-Studio
 
 // #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
-// #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
+#define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
@@ -29,8 +29,6 @@
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
 #define ESPNOW_WIFI_CHANNEL 4                         // Channel to be used by the ESP-NOW protocol
-
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X); //setup adafruit sesnor
 
 // Control data packet structure
 typedef struct {
@@ -64,9 +62,9 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg);
 
 // motor Constants
 const int cStatusLED = 27;                            // GPIO pin of communication status LED
-const int cNumDriveMotors = 2;                             // Number of DC motors
-const int cIN1Pin[] = {17, 19, };                       // GPIO pin(s) for INT1
-const int cIN2Pin[] = {16, 18, };                       // GPIO pin(s) for INT2
+const int cNumDriveMotors = 2;                        // Number of DC motors
+const int cIN1Pin[] = {17, 19};                       // GPIO pin(s) for INT1
+const int cIN2Pin[] = {16, 18};                       // GPIO pin(s) for INT2
 const int cPWMRes = 8;                                // bit resolution for PWM
 const int cMinPWM = 0;                                // PWM value for minimum speed that turns motor
 const int cMaxPWM = pow(2, cPWMRes) - 1;              // PWM value for maximum speed
@@ -89,13 +87,12 @@ int32_t lastEncoder[] = {0, 0};                       // encoder count at last c
 float targetF[] = {0.0, 0.0};                         // target for motor as float
 
 // communication
-uint8_t receiverMacAddress[] = {0x,0x,0x,0x,0x,0x};  // MAC address of controller 00:01:02:03:04:05
+uint8_t receiverMacAddress[] = {0xA8,0x42,0xE3,0xCA,0xF1,0xBC};  // MAC address of controller 00:01:02:03:04:05
 esp_now_control_data_t inData;                        // control data packet from controller
 esp_now_drive_data_t driveData;                       // data packet to send to controller
 
 // added content
-int cNumMotors = 3;
-const int cServoPin = ;                             // GPIO pin for servo motor
+int cNumMotors = 2;
 const long cMinDutyCycle = 1650;                      // duty cycle for 0 degrees (adjust for motor if necessary)
 const long cMaxDutyCycle = 8300;                      
 
@@ -186,7 +183,7 @@ void setup() {
   pinMode(cStatusLED, OUTPUT);                        // configure GPIO for communication status LED as output
 
   // setup motors with encoders
-  for (int k = 0; k < cNumeMotors; k++) {
+  for (int k = 0; k < cNumMotors; k++) {
     ledcAttach(cIN1Pin[k], cPWMFreq, cPWMRes);        // setup INT1 GPIO PWM channel
     ledcAttach(cIN2Pin[k], cPWMFreq, cPWMRes);        // setup INT2 GPIO PWM channel
     pinMode(encoder[k].chanA, INPUT);                 // configure GPIO for encoder channel A input
@@ -244,8 +241,15 @@ void loop() {
       lastEncoder[k] = pos[k];                        // store encoder count for next control cycle
       velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
 
-      // update target for set direction
-      posChange[k] = (float) (inData.dir * controlData.Speed); // update with maximum speed // use direction from controller
+      if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
+          posChange[0] = inData.speed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
+          posChange[1] = -inData.speed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
+      } else if (inData.right && inData.dir == 0) {
+          posChange[0] = -inData.speed;
+          posChange[1] = inData.speed;
+      } else {
+        posChange[k] = (float) (inData.dir * inData.speed); // update with maximum speed // use direction from controller
+      }
       targetF[k] = targetF[k] + posChange[k];         // set new target position
       if (k == 0) {                                   // assume differential drive
         target[k] = (int32_t) targetF[k];             // motor 1 spins one way
@@ -274,13 +278,12 @@ void loop() {
       }
       pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm
 
-      // control tank drive
-      if (inData.left) {                              // if left button pushed, set power to 0
+      // if loop to filter out both left right and front back buttons
+      if (inData.left && inData.dir != 0) {           // if left and either front or back, kill power to one side    
         pwm[0] = 0;
-      }
-      if (inData.right) {                             // if right button pushed, set power to 0
+      } else if (inData.right && inData.dir != 0) {   // if right and either front or back, kill power to other side
         pwm[1] = 0;
-      }
+      }    
 
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]); // update motor speed and direction
@@ -290,40 +293,6 @@ void loop() {
       }
     }
 
-    // water wheel drive // run one time
-    for (int k = 2; k < 3; k++) {
-      velEncoder[k] = ((float) pos[k] - (float) lastEncoder[k]) / deltaT; // calculate velocity in counts/sec
-      lastEncoder[k] = pos[k];                        // store encoder count for next control cycle
-      velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
-
-      // update target for set direction
-      posChange[k] = (float) (1 * inData.waterSpeed); // update with maximum speed // use direction from controller
-      targetF[k] = targetF[k] + posChange[k];         // set new target position
-      target[k] = (int32_t) targetF[k]; 
-
-      // use PID to calculate control signal to motor
-      e[k] = target[k] - pos[k];                      // position error
-      dedt[k] = ((float) e[k]- ePrev[k]) / deltaT;    // derivative of error
-      eIntegral[k] = eIntegral[k] + e[k] * deltaT;    // integral of error (finite difference)
-      u[k] = cKp * e[k] + cKd * dedt[k] + cKi * eIntegral[k]; // compute PID-based control signal
-      ePrev[k] = e[k];                                // store error for next control cycle
-  
-      dir[k] = 1;                                     // default to forward directon
-
-      // set speed based on computed control signal
-      u[k] = fabs(u[k]);                              // get magnitude of control signal
-      if (u[k] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
-        u[k] = cMaxSpeedInCounts;                     // impose upper limit
-      }
-      pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm
-
-      if (commsLossCount < cMaxDroppedPackets / 4) {
-        setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]); // update motor speed and direction
-      }
-      else {
-        setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);       // stop motor
-      }
-    }
 
     // send data from drive to controller
     if (peer->send_message((const uint8_t *) &driveData, sizeof(driveData))) {

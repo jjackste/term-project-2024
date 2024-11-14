@@ -1,5 +1,5 @@
 //
-// term project 2024 robot code
+// term project 2024 robot code [drivetrain]
 // adapted from mme4487 lab 4 drive code
 // lab 004, team 1
 // 
@@ -10,13 +10,6 @@
 // turn left and right while moving
 // tank turn left and right stationary
 // 
-// automated functions:
-// colour sensing
-// colour sorting
-// water wheel spinning
-//
-
-// #define SERIAL_STUDIO                                 // print formatted string, that can be captured and parsed by Serial-Studio
 
 // #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
 #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
@@ -34,10 +27,9 @@
 typedef struct {
   int dir;                                            // drive direction: 1 = forward, -1 = reverse, 0 = stop
   uint32_t time;                                      // time packet sent
-  int speed;                                          // variabel for receiving motor speed
+  int driveSpeed;                                     // variable for receiving motor speed
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int waterSpeed;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
@@ -45,7 +37,6 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
-  int waterWheel;                                     // value of water wheel speed
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Encoder structure
@@ -91,25 +82,6 @@ uint8_t receiverMacAddress[] = {0xA8,0x42,0xE3,0xCA,0xF1,0xBC};  // MAC address 
 esp_now_control_data_t inData;                        // control data packet from controller
 esp_now_drive_data_t driveData;                       // data packet to send to controller
 
-// added content
-int cNumMotors = 2;
-const long cMinDutyCycle = 1650;                      // duty cycle for 0 degrees (adjust for motor if necessary)
-const long cMaxDutyCycle = 8300;                      
-
-// taken out of void loop
-float deltaT = 0;                                   // time interval
-int32_t pos[] = {0, 0};                             // current motor positions
-int32_t e[] = {0, 0};                               // position error
-float velEncoder[] = {0, 0};                        // motor velocity in counts/sec
-float velMotor[] = {0, 0};                          // motor shaft velocity in rpm
-float posChange[] = {0, 0};                         // change in position for set speed
-float ePrev[] = {0, 0};                             // previous position error
-float dedt[] = {0, 0};                              // rate of change of position error (de/dt)
-float eIntegral[] = {0, 0};                         // integral of error 
-float u[] = {0, 0};                                 // PID control signal
-int pwm[] = {0, 0};                                 // motor speed(s), represented in bit resolution
-int dir[] = {1, 1};                                 // direction that motor should turn
-
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -142,7 +114,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
   #ifdef PRINT_INCOMING
-      Serial.printf("%d, %d, %d, %d, %d\n", inData.dir, inData.speed, inData.left, inData.right, inData.time);
+      Serial.printf("%d, %d, %d, %d, %d\n", inData.dir, inData.speed, inData.left, inData.right, inData.time); // troubleshooting help
   #endif
   }
   
@@ -158,8 +130,7 @@ public:
       digitalWrite(cStatusLED, 1);                      // turn on communication status LED
       commsLossCount++;
     }
-  }
-  
+  } 
 };
 
 // Peers
@@ -214,6 +185,19 @@ void setup() {
 }
 
 void loop() { 
+  float deltaT = 0;                                   // time interval
+  int32_t pos[] = {0, 0};                             // current motor positions
+  int32_t e[] = {0, 0};                               // position error
+  float velEncoder[] = {0, 0};                        // motor velocity in counts/sec
+  float velMotor[] = {0, 0};                          // motor shaft velocity in rpm
+  float posChange[] = {0, 0};                         // change in position for set speed
+  float ePrev[] = {0, 0};                             // previous position error
+  float dedt[] = {0, 0};                              // rate of change of position error (de/dt)
+  float eIntegral[] = {0, 0};                         // integral of error 
+  float u[] = {0, 0};                                 // PID control signal
+  int pwm[] = {0, 0};                                 // motor speed(s), represented in bit resolution
+  int dir[] = {1, 1};                                 // direction that motor should turn
+
     // if too many sequential packets have dropped, assume loss of controller, restart as safety measure
   if (commsLossCount > cMaxDroppedPackets) {
       failReboot();
@@ -242,13 +226,13 @@ void loop() {
       velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
 
       if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
-          posChange[0] = inData.speed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
-          posChange[1] = -inData.speed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
+          posChange[0] = inData.motorSpeed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
+          posChange[1] = -inData.motorSpeed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
       } else if (inData.right && inData.dir == 0) {
-          posChange[0] = -inData.speed;
-          posChange[1] = inData.speed;
+          posChange[0] = -inData.motorSpeed;
+          posChange[1] = inData.motorSpeed;
       } else {
-        posChange[k] = (float) (inData.dir * inData.speed); // update with maximum speed // use direction from controller
+        posChange[k] = (float) (inData.dir * inData.motorSpeed); // update with maximum speed // use direction coming in from controller
       }
       targetF[k] = targetF[k] + posChange[k];         // set new target position
       if (k == 0) {                                   // assume differential drive
@@ -293,13 +277,12 @@ void loop() {
       }
     }
 
-
     // send data from drive to controller
     if (peer->send_message((const uint8_t *) &driveData, sizeof(driveData))) {
-      digitalWrite(cStatusLED, 0);                    // if successful, turn off communucation status LED
+      digitalWrite(cStatusLED, 1);                      // if successful, turn on communucation status LED
       }
       else {
-        digitalWrite(cStatusLED, 1);                    // otherwise, turn on communication status LED
+        digitalWrite(cStatusLED, 1);                    // otherwise, turn off communication status LED
       } 
   }
 }
@@ -338,15 +321,4 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg) {
   else {                                              // B low indicates that it is lagging channel A
     s->pos--;                                         // decrease position
   }
-}
-
-// Converts servo position in degrees into the required duty cycle for an RC servo motor control signal 
-// assuming 16-bit resolution (i.e., value represented as fraction of 65535). 
-long degreesToDutyCycle(int deg) {
-  long dutyCycle = map(deg, 0, 180, cMinDutyCycle, cMaxDutyCycle);  // convert to duty cycle
-  #ifdef OUTPUT_ON
-    float percent = dutyCycle * 0.0015259;              // dutyCycle / 65535 * 100
-    Serial.printf("Degrees %d, Duty Cycle Val: %ld = %f%%\n", servoPos, dutyCycle, percent);
-  #endif
-  return dutyCycle;
 }

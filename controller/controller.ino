@@ -22,15 +22,15 @@
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
 #define ESPNOW_WIFI_CHANNEL 4                         // Channel to be used by the ESP-NOW protocol
 
-// Structs
 // Control data packet structure
 typedef struct {
-  int dir;                                            //drive direction: 1 = forward, -1 = reverse, 0 = stop
-  uint32_t time;                                      //time packet sent
-  int motorSpeed;                                     //motor speed
-  bool left;                                          //is left button pressed?
-  bool right;                                         //is right button pressed?
+  int dir;                                            // drive direction: 1 = forward, -1 = reverse, 0 = stop
+  uint32_t time;                                      // time packet sent
+  int driveSpeed;                                     // variable for receiving motor speed
+  bool left;                                          // variable for left button, either on or off
+  bool right;                                         // variable for right button, either on or off
   int waterSpeed;
+  int gate;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
@@ -38,6 +38,7 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
+  int waterWheel;                                     // value of water wheel speed
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Button structure
@@ -74,6 +75,8 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 Button buttonLeft = {27, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {33, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
 int motorPotPin = 34;                                  // motor pot pin
+int waterPotPin = 35;                                  // water wheel pot pin
+int gatePotPin = 32;                                   // gate pot pin
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -118,7 +121,7 @@ public:
     if (success) {
   #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right); // troubleshooting
+        Serial.printf("dir: %d, left: %d, right: %d, ww: %d, drive: %d \n", controlData.dir, controlData.left, controlData.right, controlData.waterSpeed, controlData.motorSpeed); // troubleshooting
   #endif
       commsLossCount = 0;
     }
@@ -200,8 +203,12 @@ void loop() {
     // speed control
     int motorSpeed = analogRead(motorPotPin);                       // pot value sent as a variable in the structure
     int waterSpeed = analogRead(waterPotPin);                       // pot value sent as a variable in the structure
-    controlData.motorSpeed = map(motorSpeed, 0, 4095, 0, 14);            // scale raw pot value into servo range 
-    controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
+    controlData.motorSpeed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into dc range 
+    controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into dc range 
+
+    // gate control
+    int gateVal = analogRead(gatePotPin);
+    controlData.gatePos = map(gateVal, 0, 4095, 0, 180);            // scale it into servo range 0 to 180 degrees
 
     //forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed

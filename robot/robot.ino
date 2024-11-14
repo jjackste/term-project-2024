@@ -1,5 +1,5 @@
 //
-// term project 2024 robot code
+// term project 2024 robot code [sorting] 
 // adapted from mme4487 lab 4 drive code
 // lab 004, team 1
 // 
@@ -14,9 +14,8 @@
 // colour sensing
 // colour sorting
 // water wheel spinning
+// battery precentage
 //
-
-// #define SERIAL_STUDIO                                 // print formatted string, that can be captured and parsed by Serial-Studio
 
 // #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
 #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
@@ -34,10 +33,11 @@
 typedef struct {
   int dir;                                            // drive direction: 1 = forward, -1 = reverse, 0 = stop
   uint32_t time;                                      // time packet sent
-  int motorSpeed;                                          // variabel for receiving motor speed
+  int driveSpeed;                                     // variable for receiving motor speed
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
   int waterSpeed;
+  int gatePos;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
@@ -94,8 +94,9 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 
 // added content
 const int cNumMotors = 3;                        // Number of DC motors
-const long cMinDutyCycle = 1650;                      // duty cycle for 0 degrees (adjust for motor if necessary)
+const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (adjust for motor if necessary)
 const long cMaxDutyCycle = 8300;
+const int gatePin = 34;
 
 
 // Classes
@@ -200,6 +201,8 @@ void setup() {
     }
   memset(&inData, 0, sizeof(inData));                 // clear controller data
   memset(&driveData, 0, sizeof(driveData));           // clear drive data
+
+  ledcAttach(gatePin, 50, 16);                      // setup servo pin for 50 Hz, 16-bit resolution
 }
 
 void loop() { 
@@ -228,6 +231,9 @@ void loop() {
     pos[k] = encoder[k].pos;                          // read and store current motor position
     }
   interrupts();                                       // turn interrupts back on
+
+  // servo gate control
+  ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds

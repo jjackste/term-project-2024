@@ -187,6 +187,7 @@ void setup() {
 
 void loop() {
   uint32_t curTime = micros();                        // capture current time in microseconds
+
   if (curTime - lastTime > 10000) {                   // wait ~10 ms
     lastTime = curTime;
     controlData.time = curTime;                       // update transmission time
@@ -206,7 +207,7 @@ void loop() {
     // speed control
     int motorSpeed = analogRead(motorPotPin);               //Pot value sent as a variable in the structure
     int waterSpeed = analogRead(waterPotPin);               //Pot value sent as a variable in the structure
-    controlData.speed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
+    controlData.speed = map(motorSpeed, 0, 4095, 0, 14);            // scale raw pot value into servo range 
     controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
     //forward and reverse button operation

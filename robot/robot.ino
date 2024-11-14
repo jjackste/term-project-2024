@@ -34,7 +34,7 @@
 typedef struct {
   int dir;                                            // drive direction: 1 = forward, -1 = reverse, 0 = stop
   uint32_t time;                                      // time packet sent
-  int speed;                                          // variabel for receiving motor speed
+  int motorSpeed;                                          // variabel for receiving motor speed
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
   int waterSpeed;

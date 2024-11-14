@@ -24,6 +24,8 @@
 #include "ESP32_NOW.h"
 #include "WiFi.h"
 #include <esp_mac.h>                                  // For the MAC2STR and MACSTR macros
+#include "Adafruit_TCS34725.h"
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X); //setup adafruit sesnor
 
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
@@ -82,10 +84,11 @@ const float cKd = 0.8;                                // derivative gain for PID
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint16_t commsLossCount = 0;                          // number of sequential sent packets have dropped
 Encoder encoder[] = {{25, 26, 0},                     // encoder 0 on GPIO 25 and 26, 0 position
-                     {32, 33, 0}, {12, 13, 0}};                    // encoder 1 on GPIO 32 and 33, 0 position
-int32_t target[] = {0, 0, 0};                            // target encoder count for motor
-int32_t lastEncoder[] = {0, 0, 0};                       // encoder count at last control cycle
-float targetF[] = {0.0, 0.0, 0.0};                         // target for motor as float
+                     {32, 33, 0},                     // encoder 1 on GPIO 32 and 33, 0 position
+                     {12, 13, 0}};                    // encoder 2 on GPIO 12 and 13, 0 position
+int32_t target[] = {0, 0, 0};                         // target encoder count for motor
+int32_t lastEncoder[] = {0, 0, 0};                    // encoder count at last control cycle
+float targetF[] = {0.0, 0.0, 0.0};                    // target for motor as float
 
 // communication
 uint8_t receiverMacAddress[] = {0xA8,0x42,0xE3,0xCA,0xF1,0xBC};  // MAC address of controller 00:01:02:03:04:05
@@ -97,6 +100,8 @@ const int cNumMotors = 3;                        // Number of DC motors
 const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (adjust for motor if necessary)
 const long cMaxDutyCycle = 8300;
 const int gatePin = 34;
+const int sorterPin = 35;
+uint16_t r, g, b, c, colorTemp;                     // variables for sensor values
 
 
 // Classes
@@ -235,6 +240,27 @@ void loop() {
   // servo gate control
   ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
+  // sensor loop
+  uint32_t sTime = millis();                        // capture current time in microseconds
+  if (sTime - lsTime > 1000) {                      // wait ~1 s
+    lsTime = sTime;                                 // update start time for next control cycle
+
+    tcs.getRawData(&r, &g, &b, &c);                     // gets raw data from r g b c channels
+    colorTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);     // converts raw data into single temp value
+    driveData.colorTemp = colorTemp;
+
+
+    // sorter loop
+    if (color temp is good) {
+      ledcWrite(sorterPin, degreesToDutyCycle(180)); // set the desired servo position
+    } else if (color temp is bad) {
+      ledcWrite(sorterPin, degreesToDutyCycle(0)); // set the desired servo position
+    } else {
+      ledcWrite(sorterPin, degreesToDutyCycle(90)); // set the desired servo position
+    }
+
+  }
+
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds
   if (curTime - lastTime > 10000) {                   // wait ~10 ms
@@ -288,6 +314,7 @@ void loop() {
         digitalWrite(cStatusLED, 1);                    // otherwise, turn on communication status LED
       } 
   }
+
 }
 
 // send motor control signals, based on direction and pwm (speed)
@@ -330,9 +357,7 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg) {
 // assuming 16-bit resolution (i.e., value represented as fraction of 65535). 
 long degreesToDutyCycle(int deg) {
   long dutyCycle = map(deg, 0, 180, cMinDutyCycle, cMaxDutyCycle);  // convert to duty cycle
-  #ifdef OUTPUT_ON
-    float percent = dutyCycle * 0.0015259;              // dutyCycle / 65535 * 100
-    Serial.printf("Degrees %d, Duty Cycle Val: %ld = %f%%\n", servoPos, dutyCycle, percent);
-  #endif
   return dutyCycle;
 }
+
+int 

@@ -200,7 +200,7 @@ void loop() {
     // speed control
     int motorSpeed = analogRead(motorPotPin);                       // pot value sent as a variable in the structure
     int waterSpeed = analogRead(waterPotPin);                       // pot value sent as a variable in the structure
-    controlData.speed = map(motorSpeed, 0, 4095, 0, 14);            // scale raw pot value into servo range 
+    controlData.motorSpeed = map(motorSpeed, 0, 4095, 0, 14);            // scale raw pot value into servo range 
     controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
     //forward and reverse button operation

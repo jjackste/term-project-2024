@@ -35,8 +35,6 @@ typedef struct {
 // Drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int colourTemp;                                     // colour score value
-  int spinDir;                                        // direction of sorting spin
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Encoder structure
@@ -113,19 +111,19 @@ public:
       return;                                           // return
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
-  #ifdef PRINT_INCOMING
-      Serial.printf("%d, %d, %d, %d, %d\n", inData.dir, inData.speed, inData.left, inData.right, inData.time); // troubleshooting help
-  #endif
+    #ifdef PRINT_INCOMING
+        Serial.printf("%d, %d, %d, %d, %d\n", inData.dir, inData.speed, inData.left, inData.right, inData.time); // troubleshooting help
+    #endif
   }
   
   // callback function for when data is sent
   void onSent(bool success) {
     if (success) {
-  #ifdef PRINT_SEND_STATUS
-        log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-  #endif
-      commsLossCount = 0;
-    }
+    #ifdef PRINT_SEND_STATUS
+          log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
+    #endif
+        commsLossCount = 0;
+      }
     else {
       digitalWrite(cStatusLED, 1);                      // turn on communication status LED
       commsLossCount++;
@@ -202,8 +200,6 @@ void loop() {
   if (commsLossCount > cMaxDroppedPackets) {
       failReboot();
     }
-
-  // speed control
 
   // store encoder positions to avoid conflicts with ISR updates
   noInterrupts();                                     // disable interrupts temporarily while reading

@@ -30,14 +30,11 @@ typedef struct {
   int driveSpeed;                                     //motor speed
   bool left;                                          //is left button pressed?
   bool right;                                         //is right button pressed?
-  int waterSpeed;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int colourTemp;                                     // colour score value
-  int spinDir;                                        // direction of sorting spin
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Button structure
@@ -108,23 +105,23 @@ public:
       return;                                           // return
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
-  #ifdef PRINT_INCOMING
-      Serial.printf("%d\n", inData.time);
-  #endif
+    #ifdef PRINT_INCOMING
+        Serial.printf("%d\n", inData.time);
+    #endif
   }
   
   // callback function for when data is sent
   void onSent(bool success) {
     if (success) {
-  #ifdef PRINT_SEND_STATUS
-        log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right); // troubleshooting
-  #endif
-      commsLossCount = 0;
-    }
-    else {
-      digitalWrite(cStatusLED, 1);                      // turn on communication status LED
-      commsLossCount++;
+    #ifdef PRINT_SEND_STATUS
+          log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
+          Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right); // troubleshooting
+    #endif
+        commsLossCount = 0;
+      }
+      else {
+        digitalWrite(cStatusLED, 1);                      // turn on communication status LED
+        commsLossCount++;
     }
   }
 };
@@ -168,11 +165,11 @@ void setup() {
   if (peer == nullptr || !peer->begin()) {
     Serial.printf("Failed to create or register the drive peer\n");
     failReboot();
-  }
-  else {
-    Serial.printf("Successfully added peer %x:%x:%x:%x:%x:%x\n", receiverMacAddress[0], receiverMacAddress[1], 
-                                                                 receiverMacAddress[2], receiverMacAddress[3], 
-                                                                 receiverMacAddress[4], receiverMacAddress[5]);
+    }
+    else {
+      Serial.printf("Successfully added peer %x:%x:%x:%x:%x:%x\n", receiverMacAddress[0], receiverMacAddress[1], 
+                                                                  receiverMacAddress[2], receiverMacAddress[3], 
+                                                                  receiverMacAddress[4], receiverMacAddress[5]);
   }
   memset(&inData, 0, sizeof(inData));                 // clear drive data
   memset(&controlData, 0, sizeof(controlData));       // clear controller data
@@ -199,7 +196,7 @@ void loop() {
 
     // speed control
     int driveSpeed = analogRead(motorPotPin);                       // pot value sent as a variable in the structure
-    controlData.motorSpeed = map(driveSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
+    controlData.driveSpeed = map(driveSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
 
     //forward and reverse button operation

@@ -52,6 +52,7 @@ typedef struct {
 struct Encoder {
   const int chanA;                                    // GPIO pin for encoder channel A
   const int chanB;                                    // GPIO pin for encoder channel B
+  const int chanC;                                    // GPIO pin for encoder channel C
   int32_t pos;                                        // current encoder position
 };
 
@@ -63,8 +64,8 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg);
 // motor Constants
 const int cStatusLED = 27;                            // GPIO pin of communication status LED
 const int cNumDriveMotors = 2;                        // Number of DC motors
-const int cIN1Pin[] = {17, 19};                       // GPIO pin(s) for INT1
-const int cIN2Pin[] = {16, 18};                       // GPIO pin(s) for INT2
+const int cIN1Pin[] = {17, 19, 23};                       // GPIO pin(s) for INT1
+const int cIN2Pin[] = {16, 18, 22};                       // GPIO pin(s) for INT2
 const int cPWMRes = 8;                                // bit resolution for PWM
 const int cMinPWM = 0;                                // PWM value for minimum speed that turns motor
 const int cMaxPWM = pow(2, cPWMRes) - 1;              // PWM value for maximum speed
@@ -81,10 +82,10 @@ const float cKd = 0.8;                                // derivative gain for PID
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint16_t commsLossCount = 0;                          // number of sequential sent packets have dropped
 Encoder encoder[] = {{25, 26, 0},                     // encoder 0 on GPIO 25 and 26, 0 position
-                     {32, 33, 0}};                    // encoder 1 on GPIO 32 and 33, 0 position
-int32_t target[] = {0, 0};                            // target encoder count for motor
-int32_t lastEncoder[] = {0, 0};                       // encoder count at last control cycle
-float targetF[] = {0.0, 0.0};                         // target for motor as float
+                     {32, 33, 0}, {12, 13, 0}};                    // encoder 1 on GPIO 32 and 33, 0 position
+int32_t target[] = {0, 0, 0};                            // target encoder count for motor
+int32_t lastEncoder[] = {0, 0, 0};                       // encoder count at last control cycle
+float targetF[] = {0.0, 0.0, 0.0};                         // target for motor as float
 
 // communication
 uint8_t receiverMacAddress[] = {0xA8,0x42,0xE3,0xCA,0xF1,0xBC};  // MAC address of controller 00:01:02:03:04:05
@@ -92,23 +93,10 @@ esp_now_control_data_t inData;                        // control data packet fro
 esp_now_drive_data_t driveData;                       // data packet to send to controller
 
 // added content
-int cNumMotors = 2;
+const int cNumMotors = 3;                        // Number of DC motors
 const long cMinDutyCycle = 1650;                      // duty cycle for 0 degrees (adjust for motor if necessary)
-const long cMaxDutyCycle = 8300;                      
+const long cMaxDutyCycle = 8300;
 
-// taken out of void loop
-float deltaT = 0;                                   // time interval
-int32_t pos[] = {0, 0};                             // current motor positions
-int32_t e[] = {0, 0};                               // position error
-float velEncoder[] = {0, 0};                        // motor velocity in counts/sec
-float velMotor[] = {0, 0};                          // motor shaft velocity in rpm
-float posChange[] = {0, 0};                         // change in position for set speed
-float ePrev[] = {0, 0};                             // previous position error
-float dedt[] = {0, 0};                              // rate of change of position error (de/dt)
-float eIntegral[] = {0, 0};                         // integral of error 
-float u[] = {0, 0};                                 // PID control signal
-int pwm[] = {0, 0};                                 // motor speed(s), represented in bit resolution
-int dir[] = {1, 1};                                 // direction that motor should turn
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -188,6 +176,7 @@ void setup() {
     ledcAttach(cIN2Pin[k], cPWMFreq, cPWMRes);        // setup INT2 GPIO PWM channel
     pinMode(encoder[k].chanA, INPUT);                 // configure GPIO for encoder channel A input
     pinMode(encoder[k].chanB, INPUT);                 // configure GPIO for encoder channel B input
+    pinMode(encoder[k].chanC, INPUT);                 // configure GPIO for encoder channel B input
     // configure encoder to trigger interrupt with each rising edge on channel A
     attachInterruptArg(encoder[k].chanA, encoderISR, &encoder[k], RISING);
   }
@@ -214,12 +203,24 @@ void setup() {
 }
 
 void loop() { 
-    // if too many sequential packets have dropped, assume loss of controller, restart as safety measure
+
+  float deltaT = 0;                                      // time interval
+  int32_t pos[] = {0, 0, 0};                             // current motor positions
+  int32_t e[] = {0, 0, 0};                               // position error
+  float velEncoder[] = {0, 0, 0};                        // motor velocity in counts/sec
+  float velMotor[] = {0, 0, 0};                          // motor shaft velocity in rpm
+  float posChange[] = {0, 0, 0};                         // change in position for set speed
+  float ePrev[] = {0, 0, 0};                             // previous position error
+  float dedt[] = {0, 0, 0};                              // rate of change of position error (de/dt)
+  float eIntegral[] = {0, 0, 0};                         // integral of error 
+  float u[] = {0, 0, 0};                                 // PID control signal
+  int pwm[] = {0, 0, 0};                                 // motor speed(s), represented in bit resolution
+  int dir[] = {1, 1, 1};                                 // direction that motor should turn
+
+  // if too many sequential packets have dropped, assume loss of controller, restart as safety measure
   if (commsLossCount > cMaxDroppedPackets) {
       failReboot();
     }
-
-  // speed control
 
   // store encoder positions to avoid conflicts with ISR updates
   noInterrupts();                                     // disable interrupts temporarily while reading
@@ -235,28 +236,15 @@ void loop() {
     lastTime = curTime;                               // update start time for next control cycle
     driveData.time = curTime;                         // update transmission time
 
-    // drivetrain motors
-    for (int k = 0; k < cNumDriveMotors; k++) {
+    // water wheel motor
+    for (int k = 2; k < 3; k++) {
       velEncoder[k] = ((float) pos[k] - (float) lastEncoder[k]) / deltaT; // calculate velocity in counts/sec
       lastEncoder[k] = pos[k];                        // store encoder count for next control cycle
       velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
-
-      if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
-          posChange[0] = inData.speed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
-          posChange[1] = -inData.speed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
-      } else if (inData.right && inData.dir == 0) {
-          posChange[0] = -inData.speed;
-          posChange[1] = inData.speed;
-      } else {
-        posChange[k] = (float) (inData.dir * inData.speed); // update with maximum speed // use direction from controller
-      }
+      
+      posChange[k] = (float) (inData.waterSpeed); // update with maximum speed // use direction from controller
       targetF[k] = targetF[k] + posChange[k];         // set new target position
-      if (k == 0) {                                   // assume differential drive
-        target[k] = (int32_t) targetF[k];             // motor 1 spins one way
-      }
-      else {
-        target[k] = (int32_t) -targetF[k];            // motor 2 spins in opposite direction
-      }
+      target[k] = (int32_t) targetF[k];             // motor 1 spins one way
 
       // use PID to calculate control signal to motor
       e[k] = target[k] - pos[k];                      // position error
@@ -276,14 +264,7 @@ void loop() {
       if (u[k] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
         u[k] = cMaxSpeedInCounts;                     // impose upper limit
       }
-      pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm
-
-      // if loop to filter out both left right and front back buttons
-      if (inData.left && inData.dir != 0) {           // if left and either front or back, kill power to one side    
-        pwm[0] = 0;
-      } else if (inData.right && inData.dir != 0) {   // if right and either front or back, kill power to other side
-        pwm[1] = 0;
-      }    
+      pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm   
 
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]); // update motor speed and direction
@@ -292,7 +273,6 @@ void loop() {
         setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);       // stop motor
       }
     }
-
 
     // send data from drive to controller
     if (peer->send_message((const uint8_t *) &driveData, sizeof(driveData))) {

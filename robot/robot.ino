@@ -226,13 +226,13 @@ void loop() {
       velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
 
       if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
-          posChange[0] = inData.motorSpeed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
-          posChange[1] = -inData.motorSpeed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
+          posChange[0] = inData.driveSpeed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
+          posChange[1] = -inData.driveSpeed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
       } else if (inData.right && inData.dir == 0) {
-          posChange[0] = -inData.motorSpeed;
-          posChange[1] = inData.motorSpeed;
+          posChange[0] = -inData.driveSpeed;
+          posChange[1] = inData.driveSpeed;
       } else {
-        posChange[k] = (float) (inData.dir * inData.motorSpeed); // update with maximum speed // use direction coming in from controller
+        posChange[k] = (float) (inData.dir * inData.driveSpeed); // update with maximum speed // use direction coming in from controller
       }
       targetF[k] = targetF[k] + posChange[k];         // set new target position
       if (k == 0) {                                   // assume differential drive

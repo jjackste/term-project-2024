@@ -1,5 +1,5 @@
 //
-// term project 2024 controller code
+// term project 2024 controller code [drivetrain]
 // adapted from mme4487 lab 4 controller code
 // lab 004, team 1
 // 
@@ -7,13 +7,8 @@
 //
 // main functions:
 // forward, reverse, left, right control with tank turn
-// control speed of dc motors
-// show status of:
-// colour sensor
-// water wheel
-// time remaining
+// control speed of drivetrain motors
 //
-
 
 #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
 // #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
@@ -32,7 +27,7 @@
 typedef struct {
   int dir;                                            //drive direction: 1 = forward, -1 = reverse, 0 = stop
   uint32_t time;                                      //time packet sent
-  int speed;                                          //pot value from 0-4095
+  int motorSpeed;                                     //motor speed
   bool left;                                          //is left button pressed?
   bool right;                                         //is right button pressed?
   int waterSpeed;
@@ -43,7 +38,6 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
-  int waterWheel;                                     // value of water wheel speed
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Button structure
@@ -79,8 +73,7 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 // added content
 Button buttonLeft = {27, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {33, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
-int motorPotPin = 34;
-int waterPotPin = 35;
+int motorPotPin = 34;                                  // motor pot pin
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -125,7 +118,7 @@ public:
     if (success) {
   #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right);
+        Serial.printf("%d, %d, %d \n", controlData.dir, controlData.left, controlData.right); // troubleshooting
   #endif
       commsLossCount = 0;
     }
@@ -198,15 +191,15 @@ void loop() {
       }
     // send control signal to drive
     if (peer->send_message((const uint8_t *) &controlData, sizeof(controlData))) {
-      digitalWrite(cStatusLED, 1);                    // if successful, turn on communucation status LED
+        digitalWrite(cStatusLED, 1);                    // if successful, turn on communucation status LED
       }
       else {
         digitalWrite(cStatusLED, 0);                    // otherwise, turn off communication status LED
       }
 
     // speed control
-    int motorSpeed = analogRead(motorPotPin);               //Pot value sent as a variable in the structure
-    int waterSpeed = analogRead(waterPotPin);               //Pot value sent as a variable in the structure
+    int motorSpeed = analogRead(motorPotPin);                       // pot value sent as a variable in the structure
+    int waterSpeed = analogRead(waterPotPin);                       // pot value sent as a variable in the structure
     controlData.speed = map(motorSpeed, 0, 4095, 0, 14);            // scale raw pot value into servo range 
     controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into servo range 
 
@@ -214,10 +207,10 @@ void loop() {
     if (!buttonFwd.state) {                           // forward pushbutton pressed
       controlData.dir = 1;
       }
-      else if (!buttonRev.state) {                      // reverse pushbutton pressed
+      else if (!buttonRev.state) {                    // reverse pushbutton pressed
         controlData.dir = -1;
       }
-      else {                                            // no input, stop
+      else {                                          // no input, stop
         controlData.dir = 0;
       }
     
@@ -227,7 +220,7 @@ void loop() {
     } else {                                         
       controlData.left = 0;
     }
-    if (!buttonRight.state) {                           // right button
+    if (!buttonRight.state) {                         // right button
       controlData.right = 1;
     } else {             
       controlData.right = 0;

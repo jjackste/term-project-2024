@@ -11,7 +11,7 @@
 //
 
 #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
-// #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
+#define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
@@ -30,7 +30,7 @@ typedef struct {
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
   int waterSpeed;
-  int gate;
+  int gatePos;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
@@ -38,7 +38,6 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
-  int waterWheel;                                     // value of water wheel speed
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Button structure
@@ -74,7 +73,7 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 // added content
 Button buttonLeft = {27, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {33, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
-int motorPotPin = 34;                                  // motor pot pin
+int drivePotPin = 34;                                  // motor pot pin
 int waterPotPin = 35;                                  // water wheel pot pin
 int gatePotPin = 32;                                   // gate pot pin
 
@@ -112,7 +111,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
   #ifdef PRINT_INCOMING
-      Serial.printf("%d\n", inData.time);
+      Serial.printf("time: %d, colour temp: %d\n", inData.time, inData.colourTemp);
   #endif
   }
   
@@ -121,7 +120,7 @@ public:
     if (success) {
   #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("dir: %d, left: %d, right: %d, ww: %d, drive: %d \n", controlData.dir, controlData.left, controlData.right, controlData.waterSpeed, controlData.motorSpeed); // troubleshooting
+        Serial.printf("dir: %d, left: %d, right: %d, ww: %d, drive: %d \n", controlData.dir, controlData.left, controlData.right, controlData.waterSpeed, controlData.driveSpeed); // troubleshooting
   #endif
       commsLossCount = 0;
     }
@@ -201,9 +200,9 @@ void loop() {
       }
 
     // speed control
-    int motorSpeed = analogRead(motorPotPin);                       // pot value sent as a variable in the structure
+    int driveSpeed = analogRead(drivePotPin);                       // pot value sent as a variable in the structure
     int waterSpeed = analogRead(waterPotPin);                       // pot value sent as a variable in the structure
-    controlData.motorSpeed = map(motorSpeed, 0, 4095, 0, 14);       // scale raw pot value into dc range 
+    controlData.driveSpeed = map(driveSpeed, 0, 4095, 0, 14);       // scale raw pot value into dc range 
     controlData.waterSpeed = map(waterSpeed, 0, 4095, 0, 14);       // scale raw pot value into dc range 
 
     // gate control

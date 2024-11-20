@@ -1,5 +1,5 @@
 //
-// term project 2024 robot code [sorting] 
+// term pro2ect 2024 robot code [sorting] 
 // adapted from mme4487 lab 4 drive code
 // lab 004, team 1
 // 
@@ -18,7 +18,7 @@
 //
 
 // #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
-#define PRINT_INCOMING                                // uncomment to turn on output of incoming data
+// #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
@@ -47,14 +47,12 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
-  int waterWheel;                                     // value of water wheel speed
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // Encoder structure
 struct Encoder {
   const int chanA;                                    // GPIO pin for encoder channel A
   const int chanB;                                    // GPIO pin for encoder channel B
-  const int chanC;                                    // GPIO pin for encoder channel C
   int32_t pos;                                        // current encoder position
 };
 
@@ -66,8 +64,8 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg);
 // motor Constants
 const int cStatusLED = 27;                            // GPIO pin of communication status LED
 const int cNumDriveMotors = 2;                        // Number of DC motors
-const int cIN1Pin[] = {17, 19, 23};                       // GPIO pin(s) for INT1
-const int cIN2Pin[] = {16, 18, 22};                       // GPIO pin(s) for INT2
+const int cIN1Pin[] = {17, 19, 13};                       // GPIO pin(s) for INT1
+const int cIN2Pin[] = {16, 18, 4};                       // GPIO pin(s) for INT2
 const int cPWMRes = 8;                                // bit resolution for PWM
 const int cMinPWM = 0;                                // PWM value for minimum speed that turns motor
 const int cMaxPWM = pow(2, cPWMRes) - 1;              // PWM value for maximum speed
@@ -85,7 +83,7 @@ uint32_t lastTime = 0;                                // last time of motor cont
 uint16_t commsLossCount = 0;                          // number of sequential sent packets have dropped
 Encoder encoder[] = {{25, 26, 0},                     // encoder 0 on GPIO 25 and 26, 0 position
                      {32, 33, 0},                     // encoder 1 on GPIO 32 and 33, 0 position
-                     {12, 13, 0}};                    // encoder 2 on GPIO 12 and 13, 0 position
+                     {14, 27, 0}};                    // encoder 2 on GPIO 12 and 13, 0 position
 int32_t target[] = {0, 0, 0};                         // target encoder count for motor
 int32_t lastEncoder[] = {0, 0, 0};                    // encoder count at last control cycle
 float targetF[] = {0.0, 0.0, 0.0};                    // target for motor as float
@@ -97,11 +95,12 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 
 // added content
 const int cNumMotors = 3;                        // Number of DC motors
-const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (adjust for motor if necessary)
+const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (ad2ust for motor if necessary)
 const long cMaxDutyCycle = 8300;
-const int gatePin = 34;
-const int sorterPin = 35;
+const int gatePin = 21;
+const int sorterPin = 22;
 uint16_t r, g, b, c, colorTemp;                     // variables for sensor values
+uint32_t lsTime = 0; 
 
 
 // Classes
@@ -136,7 +135,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
   #ifdef PRINT_INCOMING
-      Serial.printf("%d, %d, %d, %d, %d\n", inData.dir, inData.speed, inData.left, inData.right, inData.time);
+      Serial.printf("f/r: %d, drveSpeed: %d, left: %d, right: %d,  ww: %d, time: %d\n", inData.dir, inData.driveSpeed, inData.left, inData.right, inData.waterSpeed, inData.time);
   #endif
   }
   
@@ -182,7 +181,6 @@ void setup() {
     ledcAttach(cIN2Pin[k], cPWMFreq, cPWMRes);        // setup INT2 GPIO PWM channel
     pinMode(encoder[k].chanA, INPUT);                 // configure GPIO for encoder channel A input
     pinMode(encoder[k].chanB, INPUT);                 // configure GPIO for encoder channel B input
-    pinMode(encoder[k].chanC, INPUT);                 // configure GPIO for encoder channel B input
     // configure encoder to trigger interrupt with each rising edge on channel A
     attachInterruptArg(encoder[k].chanA, encoderISR, &encoder[k], RISING);
   }
@@ -207,7 +205,14 @@ void setup() {
   memset(&inData, 0, sizeof(inData));                 // clear controller data
   memset(&driveData, 0, sizeof(driveData));           // clear drive data
 
-  ledcAttach(gatePin, 50, 16);                      // setup servo pin for 50 Hz, 16-bit resolution
+  ledcAttach(sorterPin, 50, 16);                    // setup sorter pin for 50 Hz, 16-bit resolution
+  ledcAttach(gatePin, 50, 16);                      // setup gate opener pin for 50 Hz, 16-bit resolution
+
+  Timer0_Cfg = timerBegin(0, 80, true);
+  timerAttachInterrupt(Timer0_Cfg, &Timer0_ISR, true);
+  timerAlarmWrite(Timer0_Cfg, 1000, true);
+  timerAlarmEnable(Timer0_Cfg);y
+
 }
 
 void loop() { 
@@ -240,26 +245,18 @@ void loop() {
   // servo gate control
   ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
-  // sensor loop
-  uint32_t sTime = millis();                        // capture current time in microseconds
-  if (sTime - lsTime > 1000) {                      // wait ~1 s
-    lsTime = sTime;                                 // update start time for next control cycle
+  tcs.getRawData(&r, &g, &b, &c);                     // gets raw data from r g b c channels
+  int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);     // converts raw data into single temp value
+  driveData.colourTemp = colourTemp;
 
-    tcs.getRawData(&r, &g, &b, &c);                     // gets raw data from r g b c channels
-    colorTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);     // converts raw data into single temp value
-    driveData.colorTemp = colorTemp;
-
-
-    // sorter loop
-    if (color temp is good) {
-      ledcWrite(sorterPin, degreesToDutyCycle(180)); // set the desired servo position
-    } else if (color temp is bad) {
-      ledcWrite(sorterPin, degreesToDutyCycle(0)); // set the desired servo position
-    } else {
-      ledcWrite(sorterPin, degreesToDutyCycle(90)); // set the desired servo position
-    }
-
-  }
+  //sorter loop
+  // if (color temp is good) {
+  //   ledcWrite(sorterPin, degreesToDutyCycle(180)); // set the desired servo position
+  // } else if (color temp is bad) {
+  //   ledcWrite(sorterPin, degreesToDutyCycle(0)); // set the desired servo position
+  // } else {
+  //   ledcWrite(sorterPin, degreesToDutyCycle(90)); // set the desired servo position
+  // }
 
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds
@@ -269,14 +266,59 @@ void loop() {
     driveData.time = curTime;                         // update transmission time
 
     // water wheel motor
-    for (int k = 2; k < 3; k++) {
+    velEncoder[2] = ((float) pos[2] - (float) lastEncoder[2]) / deltaT; // calculate velocity in counts/sec
+    lastEncoder[2] = pos[2];                        // store encoder count for next control cycle
+    velMotor[2] = velEncoder[2] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
+    
+    posChange[2] = (inData.waterSpeed); // update with maximum speed // use direction from controller
+    targetF[2] = targetF[2] + posChange[2];         // set new target position
+    target[2] = (int32_t) targetF[2];
+
+
+    // use PID to calculate control signal to motor
+    e[2] = target[2] - pos[2];                      // position error
+    dedt[2] = ((float) e[2]- ePrev[2]) / deltaT;    // derivative of error
+    eIntegral[2] = eIntegral[2] + e[2] * deltaT;    // integral of error (finite difference)
+    u[2] = cKp * e[2] + cKd * dedt[2] + cKi * eIntegral[2]; // compute PID-based control signal
+    ePrev[2] = e[2];                                // store error for next control cycle
+
+    // set speed based on computed control signal
+    u[2] = fabs(u[2]);                              // get magnitude of control signal
+    if (u[2] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
+      u[2] = cMaxSpeedInCounts;                     // impose upper limit
+    }
+    pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm   
+
+    if (commsLossCount < cMaxDroppedPackets / 4) {
+      setMotor(dir[2], pwm[2], cIN1Pin[2], cIN2Pin[2]); // update motor speed and direction
+      Serial.printf("water motor pwm: %d \n", pwm[2]);
+      }
+    else {
+      setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       // stop motor
+    }
+
+    // drivetrain motors
+    for (int k = 0; k <= 1; k++) {
       velEncoder[k] = ((float) pos[k] - (float) lastEncoder[k]) / deltaT; // calculate velocity in counts/sec
       lastEncoder[k] = pos[k];                        // store encoder count for next control cycle
       velMotor[k] = velEncoder[k] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
-      
-      posChange[k] = (float) (inData.waterSpeed); // update with maximum speed // use direction from controller
+
+      if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
+          posChange[0] = inData.driveSpeed;                  // over ride the inData.dir * motorSpeed to force the same direction of the motors
+          posChange[1] = -inData.driveSpeed;                 // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
+      } else if (inData.right && inData.dir == 0) {
+          posChange[0] = -inData.driveSpeed;
+          posChange[1] = inData.driveSpeed;
+      } else {
+        posChange[k] = (float) (inData.dir * inData.driveSpeed); // update with maximum speed // use direction coming in from controller
+      }
       targetF[k] = targetF[k] + posChange[k];         // set new target position
-      target[k] = (int32_t) targetF[k];             // motor 1 spins one way
+      if (k == 0) {                                   // assume differential drive
+        target[k] = (int32_t) targetF[k];             // motor 1 spins one way
+      }
+      else {
+        target[k] = (int32_t) -targetF[k];            // motor 2 spins in opposite direction
+      }
 
       // use PID to calculate control signal to motor
       e[k] = target[k] - pos[k];                      // position error
@@ -296,10 +338,18 @@ void loop() {
       if (u[k] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
         u[k] = cMaxSpeedInCounts;                     // impose upper limit
       }
-      pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm   
+      pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm
+
+      // if loop to filter out both left right and front back buttons
+      if (inData.left && inData.dir != 0) {           // if left and either front or back, kill power to one side    
+        pwm[0] = 0;
+      } else if (inData.right && inData.dir != 0) {   // if right and either front or back, kill power to other side
+        pwm[1] = 0;
+      }    
 
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]); // update motor speed and direction
+        Serial.printf("drive motor pwm%d: %d \n", k, pwm[k]);
       }
       else {
         setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);       // stop motor
@@ -360,4 +410,7 @@ long degreesToDutyCycle(int deg) {
   return dutyCycle;
 }
 
-int 
+void IRAM_ATTR Timer0_ISR()
+{
+    digitalWrite(LED, !digitalRead(LED));
+}

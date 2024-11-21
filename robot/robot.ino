@@ -17,8 +17,8 @@
 // battery precentage
 //
 
-#define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
-#define PRINT_INCOMING                                // uncomment to turn on output of incoming data
+// #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
+// #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
@@ -103,7 +103,8 @@ const int gatePin = 21;
 const int sorterPin = 22;
 bool tcsFlag = 0;                                     
 const int cTCSLED = 23;                               // GPIO pin for LED on TCS34725
-uint16_t r, g, b, c;                                
+uint16_t r, g, b, c;   
+int lsTime = 0;                             
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -250,15 +251,20 @@ void loop() {
   // servo gate control
   ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
-  if (tcsFlag) {                                      // if colour sensor initialized
-  tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
-  int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
-  Serial.printf("colour temp: %d \n", colourTemp);
-  driveData.colourTemp = colourTemp;
-  #ifdef PRINT_COLOUR            
-  Serial.printf("R: %d, G: %d, B: %d, C %d\n", r, g, b, c);
-  #endif
+  uint32_t cTime = millis();                        // capture current time in microseconds
+  if (cTime - lsTime > 1000) {                   // wait ~10 ms
+    lsTime = cTime;
+    if (tcsFlag) {                                      // if colour sensor initialized
+    tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
+    int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
+    Serial.printf("colour temp: %d \n", colourTemp);
+    driveData.colourTemp = colourTemp;
+    #ifdef PRINT_COLOUR            
+    Serial.printf("R: %d, G: %d, B: %d, C %d\n", r, g, b, c);
+    #endif
+    }
   }
+  
   
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds

@@ -17,15 +17,17 @@
 // battery precentage
 //
 
-// #define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
-// #define PRINT_INCOMING                                // uncomment to turn on output of incoming data
+#define PRINT_SEND_STATUS                             // uncomment to turn on output packet send status
+#define PRINT_INCOMING                                // uncomment to turn on output of incoming data
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
 #include "WiFi.h"
 #include <esp_mac.h>                                  // For the MAC2STR and MACSTR macros
+#include <Wire.h>
+#include <SPI.h>
 #include "Adafruit_TCS34725.h"
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X); //setup adafruit sesnor
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X);
 
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
@@ -99,9 +101,9 @@ const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (ad
 const long cMaxDutyCycle = 8300;
 const int gatePin = 21;
 const int sorterPin = 22;
-uint16_t r, g, b, c, colorTemp;                     // variables for sensor values
-uint32_t lsTime = 0; 
-
+bool tcsFlag = 0;                                     
+const int cTCSLED = 23;                               // GPIO pin for LED on TCS34725
+uint16_t r, g, b, c;                                
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -208,11 +210,14 @@ void setup() {
   ledcAttach(sorterPin, 50, 16);                    // setup sorter pin for 50 Hz, 16-bit resolution
   ledcAttach(gatePin, 50, 16);                      // setup gate opener pin for 50 Hz, 16-bit resolution
 
-  Timer0_Cfg = timerBegin(0, 80, true);
-  timerAttachInterrupt(Timer0_Cfg, &Timer0_ISR, true);
-  timerAlarmWrite(Timer0_Cfg, 1000, true);
-  timerAlarmEnable(Timer0_Cfg);y
-
+  if (tcs.begin()) {
+  Serial.printf("Found TCS34725 colour sensor\n");
+  tcsFlag = true;
+  digitalWrite(cTCSLED, 1);                         // turn on onboard LED 
+  } else {
+  Serial.printf("No TCS34725 found ... check your connections\n");
+  tcsFlag = false;
+  }
 }
 
 void loop() { 
@@ -245,19 +250,16 @@ void loop() {
   // servo gate control
   ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
-  tcs.getRawData(&r, &g, &b, &c);                     // gets raw data from r g b c channels
-  int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);     // converts raw data into single temp value
+  if (tcsFlag) {                                      // if colour sensor initialized
+  tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
+  int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
+  Serial.printf("colour temp: %d \n", colourTemp);
   driveData.colourTemp = colourTemp;
-
-  //sorter loop
-  // if (color temp is good) {
-  //   ledcWrite(sorterPin, degreesToDutyCycle(180)); // set the desired servo position
-  // } else if (color temp is bad) {
-  //   ledcWrite(sorterPin, degreesToDutyCycle(0)); // set the desired servo position
-  // } else {
-  //   ledcWrite(sorterPin, degreesToDutyCycle(90)); // set the desired servo position
-  // }
-
+  #ifdef PRINT_COLOUR            
+  Serial.printf("R: %d, G: %d, B: %d, C %d\n", r, g, b, c);
+  #endif
+  }
+  
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds
   if (curTime - lastTime > 10000) {                   // wait ~10 ms
@@ -403,14 +405,7 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg) {
   }
 }
 
-// Converts servo position in degrees into the required duty cycle for an RC servo motor control signal 
-// assuming 16-bit resolution (i.e., value represented as fraction of 65535). 
 long degreesToDutyCycle(int deg) {
   long dutyCycle = map(deg, 0, 180, cMinDutyCycle, cMaxDutyCycle);  // convert to duty cycle
   return dutyCycle;
-}
-
-void IRAM_ATTR Timer0_ISR()
-{
-    digitalWrite(LED, !digitalRead(LED));
 }

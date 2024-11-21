@@ -27,7 +27,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "Adafruit_TCS34725.h"
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_614MS, TCS34725_GAIN_1X);
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
 
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
@@ -104,7 +104,7 @@ const int sorterPin = 22;
 bool tcsFlag = 0;                                     
 const int cTCSLED = 23;                               // GPIO pin for LED on TCS34725
 uint16_t r, g, b, c;   
-int lsTime = 0;                             
+int lsTime = 0;                 
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -254,14 +254,22 @@ void loop() {
   uint32_t cTime = millis();                        // capture current time in microseconds
   if (cTime - lsTime > 1000) {                   // wait ~10 ms
     lsTime = cTime;
+
     if (tcsFlag) {                                      // if colour sensor initialized
     tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
     int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
     Serial.printf("colour temp: %d \n", colourTemp);
     driveData.colourTemp = colourTemp;
-    #ifdef PRINT_COLOUR            
-    Serial.printf("R: %d, G: %d, B: %d, C %d\n", r, g, b, c);
-    #endif
+     
+      if((colourTemp >= 2000) && (colourTemp <= 2500)) {
+        ledcWrite(sorterPin, degreesToDutyCycle(90));
+      } 
+      else if ((colourTemp >= 5500) && (colourTemp <= 6500)) {
+        ledcWrite(sorterPin, degreesToDutyCycle(0));
+      } 
+      else {
+        ledcWrite(sorterPin, degreesToDutyCycle(180));
+      }
     }
   }
   

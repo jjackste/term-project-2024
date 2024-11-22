@@ -40,13 +40,13 @@ typedef struct {
   int driveSpeed;                                     // variable for receiving motor speed
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int waterSpeed;
   int gatePos;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // Drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
+  int waterSpeed;
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
 } __attribute__((packed)) esp_now_drive_data_t;
@@ -64,9 +64,8 @@ void failReboot();
 void ARDUINO_ISR_ATTR encoderISR(void* arg);
 
 // motor Constants
-const int cStatusLED = 27;                            // GPIO pin of communication status LED
 const int cNumDriveMotors = 2;                        // Number of DC motors
-const int cIN1Pin[] = {17, 19, 13};                       // GPIO pin(s) for INT1
+const int cIN1Pin[] = {17, 19, 15};                       // GPIO pin(s) for INT1
 const int cIN2Pin[] = {16, 18, 4};                       // GPIO pin(s) for INT2
 const int cPWMRes = 8;                                // bit resolution for PWM
 const int cMinPWM = 0;                                // PWM value for minimum speed that turns motor
@@ -98,13 +97,14 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 // added content
 const int cNumMotors = 3;                        // Number of DC motors
 const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (ad2ust for motor if necessary)
-const long cMaxDutyCycle = 8300;
-const int gatePin = 21;
-const int sorterPin = 22;
+const long cMaxDutyCycle = 8175;
+const int gatePin = 13;
+const int sorterPin = 5;
 bool tcsFlag = 0;                                     
 const int cTCSLED = 23;                               // GPIO pin for LED on TCS34725
 uint16_t r, g, b, c;   
-int lsTime = 0;                 
+int lsTime = 0;     
+int colourTemp = 0;            
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -151,7 +151,6 @@ public:
       commsLossCount = 0;
     }
     else {
-      digitalWrite(cStatusLED, 1);                      // turn on communication status LED
       commsLossCount++;
     }
   }
@@ -176,8 +175,6 @@ void setup() {
   Serial.print("MAC address for drive "); 
   Serial.println(WiFi.macAddress());                  // print MAC address of ESP32
   
-  pinMode(cStatusLED, OUTPUT);                        // configure GPIO for communication status LED as output
-
   // setup motors with encoders
   for (int k = 0; k < cNumMotors; k++) {
     ledcAttach(cIN1Pin[k], cPWMFreq, cPWMRes);        // setup INT1 GPIO PWM channel
@@ -249,31 +246,33 @@ void loop() {
   interrupts();                                       // turn interrupts back on
 
   // servo gate control
-  ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
+  // ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
   uint32_t cTime = millis();                        // capture current time in microseconds
   if (cTime - lsTime > 1000) {                   // wait ~10 ms
     lsTime = cTime;
-
-    if (tcsFlag) {                                      // if colour sensor initialized
     tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
-    int colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
-    Serial.printf("colour temp: %d \n", colourTemp);
+    colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
+    // Serial.printf("colour temp: %d \n", colourTemp);
     driveData.colourTemp = colourTemp;
-     
-      if((colourTemp >= 2000) && (colourTemp <= 2500)) {
-        ledcWrite(sorterPin, degreesToDutyCycle(90));
-      } 
-      else if ((colourTemp >= 5500) && (colourTemp <= 6500)) {
-        ledcWrite(sorterPin, degreesToDutyCycle(0));
-      } 
-      else {
-        ledcWrite(sorterPin, degreesToDutyCycle(180));
-      }
-    }
   }
-  
-  
+
+  if((colourTemp >= 2000) && (colourTemp <= 2500)) { // baseline
+    ledcWrite(sorterPin, degreesToDutyCycle(90));
+    // Serial.printf("baseline \n");
+    driveData.spinDir = 0;
+  } 
+  else if ((colourTemp >= 5500) && (colourTemp <= 6500)) { // good
+    ledcWrite(sorterPin, degreesToDutyCycle(0));
+    // Serial.printf("good \n");
+    driveData.spinDir = 1;
+  } 
+  else { // any other value if bad
+    ledcWrite(sorterPin, degreesToDutyCycle(180));
+    // Serial.printf("bad \n");
+    driveData.spinDir = 2;
+  }
+
   // dc motor loop
   uint32_t curTime = micros();                        // capture current time in microseconds
   if (curTime - lastTime > 10000) {                   // wait ~10 ms
@@ -282,36 +281,10 @@ void loop() {
     driveData.time = curTime;                         // update transmission time
 
     // water wheel motor
-    velEncoder[2] = ((float) pos[2] - (float) lastEncoder[2]) / deltaT; // calculate velocity in counts/sec
-    lastEncoder[2] = pos[2];                        // store encoder count for next control cycle
-    velMotor[2] = velEncoder[2] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
-    
-    posChange[2] = (inData.waterSpeed); // update with maximum speed // use direction from controller
-    targetF[2] = targetF[2] + posChange[2];         // set new target position
-    target[2] = (int32_t) targetF[2];
-
-
-    // use PID to calculate control signal to motor
-    e[2] = target[2] - pos[2];                      // position error
-    dedt[2] = ((float) e[2]- ePrev[2]) / deltaT;    // derivative of error
-    eIntegral[2] = eIntegral[2] + e[2] * deltaT;    // integral of error (finite difference)
-    u[2] = cKp * e[2] + cKd * dedt[2] + cKi * eIntegral[2]; // compute PID-based control signal
-    ePrev[2] = e[2];                                // store error for next control cycle
-
-    // set speed based on computed control signal
-    u[2] = fabs(u[2]);                              // get magnitude of control signal
-    if (u[2] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
-      u[2] = cMaxSpeedInCounts;                     // impose upper limit
-    }
-    pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm   
-
-    if (commsLossCount < cMaxDroppedPackets / 4) {
-      setMotor(dir[2], pwm[2], cIN1Pin[2], cIN2Pin[2]); // update motor speed and direction
-      Serial.printf("water motor pwm: %d \n", pwm[2]);
-      }
-    else {
-      setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       // stop motor
-    }
+    pwm[2] = 200;
+    setMotor(1, pwm[2], cIN1Pin[2], cIN2Pin[2]); // update motor speed and direction
+    driveData.waterSpeed = pwm[2];
+    // Serial.printf("water motor pwm: %d \n", pwm[2]);
 
     // drivetrain motors
     for (int k = 0; k <= 1; k++) {
@@ -333,7 +306,7 @@ void loop() {
         target[k] = (int32_t) targetF[k];             // motor 1 spins one way
       }
       else {
-        target[k] = (int32_t) -targetF[k];            // motor 2 spins in opposite direction
+        target[k] = (int32_t) targetF[k];            // motor 2 spins in opposite direction
       }
 
       // use PID to calculate control signal to motor
@@ -365,20 +338,14 @@ void loop() {
 
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]); // update motor speed and direction
-        Serial.printf("drive motor pwm%d: %d \n", k, pwm[k]);
+        // Serial.printf("drive motor pwm%d: %d \n", k, pwm[k]);
       }
       else {
         setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);       // stop motor
       }
     }
 
-    // send data from drive to controller
-    if (peer->send_message((const uint8_t *) &driveData, sizeof(driveData))) {
-      digitalWrite(cStatusLED, 0);                    // if successful, turn off communucation status LED
-      }
-      else {
-        digitalWrite(cStatusLED, 1);                    // otherwise, turn on communication status LED
-      } 
+    peer->send_message((const uint8_t *) &driveData, sizeof(driveData));
   }
 
 }
@@ -421,5 +388,9 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg) {
 
 long degreesToDutyCycle(int deg) {
   long dutyCycle = map(deg, 0, 180, cMinDutyCycle, cMaxDutyCycle);  // convert to duty cycle
+#ifdef OUTPUT_ON
+  float percent = dutyCycle * 0.0015259;              // dutyCycle / 65535 * 100
+  Serial.printf("Degrees %d, Duty Cycle Val: %ld = %f%%\n", servoPos, dutyCycle, percent);
+#endif
   return dutyCycle;
 }

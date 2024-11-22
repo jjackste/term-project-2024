@@ -5,7 +5,8 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "Adafruit_TCS34725.h"
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_24MS, TCS34725_GAIN_4X);
+
 
 const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (ad2ust for motor if necessary)
 const long cMaxDutyCycle = 8175;
@@ -36,25 +37,29 @@ void setup() {
 
 void loop() {
 
-  uint32_t cTime = millis();                        // capture current time in microseconds
-  if (cTime - lsTime > 1000) {                   // wait ~10 ms
+  uint32_t cTime = millis();                       // capture current time in microseconds
+  if (cTime - lsTime > 500) {                   // wait ~10 ms
     lsTime = cTime;
     tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
     Serial.printf("colour temp: %d \n", colourTemp);
-  }
+    Serial.print("R: "); Serial.print(r, DEC); Serial.print(" ");
+    Serial.print("G: "); Serial.print(g, DEC); Serial.print(" ");
+    Serial.print("B: "); Serial.print(b, DEC); Serial.print(" ");
+    Serial.print("C: "); Serial.print(c, DEC); Serial.print(" ");
 
-  if((colourTemp >= 2000) && (colourTemp <= 2500)) { // baseline
-    ledcWrite(sorterPin, degreesToDutyCycle(90));
-    Serial.printf("baseline \n");
-  } 
-  else if ((colourTemp >= 5500) && (colourTemp <= 6500)) { // good
-    ledcWrite(sorterPin, degreesToDutyCycle(0));
-    Serial.printf("good \n");
-  } 
-  else { // any other value if bad
-    ledcWrite(sorterPin, degreesToDutyCycle(180));
-    Serial.printf("bad \n");
+    if( (colourTemp >= 3800) && (colourTemp <= 4500)  && (r <= 30) && (g <= 20) && (b <= 20) ) { // baseline
+      ledcWrite(sorterPin, degreesToDutyCycle(90));
+      Serial.printf("baseline \n");
+      } 
+      else if ( (colourTemp >= 4000) && (colourTemp <= 5000) && (c >= 80) && (r <= 80)) { // good
+      ledcWrite(sorterPin, degreesToDutyCycle(0));
+      Serial.printf("good \n");
+      } 
+      else { // any other value if bad
+      ledcWrite(sorterPin, degreesToDutyCycle(180));
+      Serial.printf("bad \n");
+    }
   }
 
 }

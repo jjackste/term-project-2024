@@ -27,7 +27,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "Adafruit_TCS34725.h"
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_24MS, TCS34725_GAIN_4X);
 
 // Definitions
 #define ESPNOW_WIFI_IFACE WIFI_IF_STA                 // Wi-Fi interface to be used by the ESP-NOW protocol
@@ -46,7 +46,7 @@ typedef struct {
 // Drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int waterSpeed;
+  int waterSpeed;                                     // pwm speed of water wheel speed
   int colourTemp;                                     // colour score value
   int spinDir;                                        // direction of sorting spin
 } __attribute__((packed)) esp_now_drive_data_t;
@@ -96,15 +96,14 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 
 // added content
 const int cNumMotors = 3;                        // Number of DC motors
-const long cMinDutyCycle = 1650;                 // duty cycle for 0 degrees (ad2ust for motor if necessary)
-const long cMaxDutyCycle = 8175;
-const int gatePin = 13;
-const int sorterPin = 5;
-bool tcsFlag = 0;                                     
-const int cTCSLED = 23;                               // GPIO pin for LED on TCS34725
-uint16_t r, g, b, c;   
-int lsTime = 0;     
-int colourTemp = 0;            
+const long cMinDutyCycle = 1400;                 // duty cycle for 0 degrees (ad2ust for motor if necessary)
+const long cMaxDutyCycle = 8300;
+const int sorterPin = 5;                         // pin for sorter servo
+bool tcsFlag = 0;                                  
+const int cTCSLED = 23;                          // GPIO pin for LED on TCS34725
+uint16_t r, g, b, c;                               
+int lsTime = 0;                                  // timer count for sensor timer loop
+int colourTemp = 0;                              // colourtemp set up
 
 // Classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -206,7 +205,6 @@ void setup() {
   memset(&driveData, 0, sizeof(driveData));           // clear drive data
 
   ledcAttach(sorterPin, 50, 16);                    // setup sorter pin for 50 Hz, 16-bit resolution
-  ledcAttach(gatePin, 50, 16);                      // setup gate opener pin for 50 Hz, 16-bit resolution
 
   if (tcs.begin()) {
   Serial.printf("Found TCS34725 colour sensor\n");
@@ -248,29 +246,30 @@ void loop() {
   // servo gate control
   // ledcWrite(gatePin, degreesToDutyCycle(inData.gatePos)); // set the desired servo position
 
-  uint32_t cTime = millis();                        // capture current time in microseconds
-  if (cTime - lsTime > 1000) {                   // wait ~10 ms
+  uint32_t cTime = millis();                       // capture current time in microseconds, for sensor loop
+  if (cTime - lsTime > 750) {                     // wait ~1 s
     lsTime = cTime;
     tcs.getRawData(&r, &g, &b, &c);                   // get raw RGBC values
-    colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
-    // Serial.printf("colour temp: %d \n", colourTemp);
-    driveData.colourTemp = colourTemp;
-  }
+    colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c); // convert to 
+    Serial.printf("colour temp: %d \n", colourTemp);
+    Serial.print("R: "); Serial.print(r, DEC); Serial.print(" ");
+    Serial.print("G: "); Serial.print(g, DEC); Serial.print(" ");
+    Serial.print("B: "); Serial.print(b, DEC); Serial.print(" ");
+    Serial.print("C: "); Serial.print(c, DEC); Serial.print(" ");
 
-  if((colourTemp >= 2000) && (colourTemp <= 2500)) { // baseline
-    ledcWrite(sorterPin, degreesToDutyCycle(90));
-    // Serial.printf("baseline \n");
-    driveData.spinDir = 0;
-  } 
-  else if ((colourTemp >= 5500) && (colourTemp <= 6500)) { // good
-    ledcWrite(sorterPin, degreesToDutyCycle(0));
-    // Serial.printf("good \n");
-    driveData.spinDir = 1;
-  } 
-  else { // any other value if bad
-    ledcWrite(sorterPin, degreesToDutyCycle(180));
-    // Serial.printf("bad \n");
-    driveData.spinDir = 2;
+    if ( (colourTemp >= 3800) && (colourTemp <= 4500)  && (r <= 30) && (g <= 30) && (b <= 20) ) { // baseline values
+      ledcWrite(sorterPin, degreesToDutyCycle(90)); // spin middle
+      // Serial.printf("baseline \n");
+      } 
+      else if ( (colourTemp >= 4000) && (colourTemp <= 5000) && (c >= 80) && (r <= 80)) { // good or wanted values
+      ledcWrite(sorterPin, degreesToDutyCycle(20)); // spin left
+      // Serial.printf("good \n");
+      } 
+      else { // any other value if bad
+      ledcWrite(sorterPin, degreesToDutyCycle(160)); // spin right
+      // Serial.printf("bad \n");
+    }
+
   }
 
   // dc motor loop
@@ -280,11 +279,36 @@ void loop() {
     lastTime = curTime;                               // update start time for next control cycle
     driveData.time = curTime;                         // update transmission time
 
-    // water wheel motor
-    pwm[2] = 200;
-    setMotor(1, pwm[2], cIN1Pin[2], cIN2Pin[2]); // update motor speed and direction
-    driveData.waterSpeed = pwm[2];
-    // Serial.printf("water motor pwm: %d \n", pwm[2]);
+    // water wheel motor driver
+    velEncoder[2] = ((float) pos[2] - (float) lastEncoder[2]) / deltaT; // calculate velocity in counts/sec
+    lastEncoder[2] = pos[2];                        // store encoder count for next control cycle
+    velMotor[2] = velEncoder[2] / cCountsRev * 60;  // calculate motor shaft velocity in rpm
+
+    posChange[2] = 10; // set with calculated speed for optimal collection
+    targetF[2] = targetF[2] + posChange[2];         // set new target position
+    target[2] = (int32_t) targetF[2];
+
+    // use PID to calculate control signal to motor
+    e[2] = target[2] - pos[2];                      // position error
+    dedt[2] = ((float) e[2]- ePrev[2]) / deltaT;    // derivative of error
+    eIntegral[2] = eIntegral[2] + e[2] * deltaT;    // integral of error (finite difference)
+    u[2] = cKp * e[2] + cKd * dedt[2] + cKi * eIntegral[2]; // compute PID-based control signal
+    ePrev[2] = e[2];                                // store error for next control cycle
+
+    // set speed based on computed control signal
+    u[2] = fabs(u[2]);                              // get magnitude of control signal
+    if (u[2] > cMaxSpeedInCounts) {                 // if control signal will saturate motor
+      u[2] = cMaxSpeedInCounts;                     // impose upper limit
+    }
+    pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); // convert control signal to pwm   
+
+    if (commsLossCount < cMaxDroppedPackets / 4) {
+      setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]); // update motor speed and direction
+      // Serial.printf("water motor pwm: %d \n", pwm[2]);
+      }
+    else {
+      setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       // stop motor
+    }
 
     // drivetrain motors
     for (int k = 0; k <= 1; k++) {

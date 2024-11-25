@@ -99,7 +99,7 @@ const int cNumMotors = 3;                        // number of DC motors includin
 const int sorterPin = 5;                         // pin for sorter servo
 const int gatePin = 13;                          // pin for hopper gate servo
 const int cTCSLED = 23;                          // GPIO pin for LED on TCS34725
-const int cMinDutyCycle = 1400;                  // duty cycle for 0 degrees
+const int cMinDutyCycle = 1700;                  // duty cycle for 0 degrees
 const int cMaxDutyCycle = 8300;                  // duty cycle for 180 degrees  
 const int cStatusLED = 2;                        // status led
 uint16_t r, g, b, c;                             // tcs values setup 
@@ -245,7 +245,7 @@ void loop() {
     lsTime = cTime;
     tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-    Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
+    // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
 
     // sorter servo control
     if ( (colourTemp >= 3800) && (colourTemp <= 4500)  && (r <= 30) && (g <= 30) && (b <= 20) ) { // baseline values for servo to stay in middle, either after scanning slide face or open air
@@ -254,15 +254,15 @@ void loop() {
       spinDir = 0;
       } 
       else if ( (colourTemp >= 4000) && (colourTemp <= 5000) && (c >= 80) && (r <= 80)) { // good or wanted values, spin left
-      ledcWrite(sorterPin, degreesToDutyCycle(20)); // spin left
+      ledcWrite(sorterPin, degreesToDutyCycle(0)); // spin left
       // Serial.printf("good \n");
       spinDir = 1;
       }
-      else if ( colourTemp = 0) { // restart esp32 if colour sensor stops working, unknown cause
+      else if ( colourTemp = 0 ) { // restart esp32 if colour sensor stops working, unknown cause
         failReboot();
       } 
       else { // any other value is bad, spin to the back
-      ledcWrite(sorterPin, degreesToDutyCycle(160)); // spin right
+      ledcWrite(sorterPin, degreesToDutyCycle(180)); // spin right
       // Serial.printf("bad \n");
       spinDir = 2;
     }

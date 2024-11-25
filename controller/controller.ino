@@ -191,7 +191,7 @@ void loop() {
 
     // hopper gate control
     int gateVal = analogRead(gatePotPin);                           // gate pot value read
-    controlData.hopper = map(gateVal, 0, 4095, 90, 180);            // scale raw pot value into degrees, range from 90 to 180 degrees
+    controlData.hopper = map(gateVal, 0, 4095, 85, 180);            // scale raw pot value into degrees, range from 90 to 180 degrees
 
     // forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed

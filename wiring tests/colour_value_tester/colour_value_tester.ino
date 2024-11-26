@@ -46,15 +46,13 @@ void loop() {
 
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
     Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d,", colourTemp, r, g, b, c);
-
-
    
     if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
       Serial.printf(" baseline \n");
       ledcWrite(servo, 90);
-    } } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
-        Serial.printf(" good \n"); 
-        ledcWrite(servo, 0);
+    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
+      Serial.printf(" good \n"); 
+      ledcWrite(servo, 0);
     } else if (colourTemp = 0) {  // restart esp32 if colour sensor stops working, unknown cause
       failReboot();
     } else {  // any other value is bad, spin to the back

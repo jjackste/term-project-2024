@@ -248,22 +248,19 @@ void loop() {
     // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
 
     // sorter servo control
-    if ( (colourTemp >= 3800) && (colourTemp <= 4500)  && (r <= 30) && (g <= 30) && (b <= 20) ) { // baseline values for servo to stay in middle, either after scanning slide face or open air
-      ledcWrite(sorterPin, degreesToDutyCycle(90)); // spin middle
-      // Serial.printf("baseline \n");
+    if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
+      Serial.printf(" baseline \n");
+      ledcWrite(servo, 90);
       spinDir = 0;
-      } 
-      else if ( (colourTemp >= 4000) && (colourTemp <= 5000) && (c >= 80) && (r <= 80)) { // good or wanted values, spin left
-      ledcWrite(sorterPin, degreesToDutyCycle(0)); // spin left
-      // Serial.printf("good \n");
+    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
+      Serial.printf(" good \n"); 
+      ledcWrite(servo, 0);
       spinDir = 1;
-      }
-      else if ( colourTemp = 0 ) { // restart esp32 if colour sensor stops working, unknown cause
-        failReboot();
-      } 
-      else { // any other value is bad, spin to the back
-      ledcWrite(sorterPin, degreesToDutyCycle(180)); // spin right
-      // Serial.printf("bad \n");
+    } else if (colourTemp = 0) {  // restart esp32 if colour sensor stops working, unknown cause
+      failReboot();
+    } else {  // any other value is bad, spin to the back
+      Serial.printf(" bad \n");
+      ledcWrite(servo, 180);
       spinDir = 2;
     }
     driveData.spinDir = spinDir;

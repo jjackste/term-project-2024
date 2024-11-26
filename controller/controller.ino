@@ -63,7 +63,7 @@ const int cMaxDroppedPackets = 20;                    // maximum number of packe
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint32_t commsLossCount = 0;                          // number of sequential sent packets have dropped
 Button buttonFwd = {33, 0, 0, false, true, true};     // forward, NO pushbutton on GPIO 14, low state when pressed
-Button buttonRev = {14, 0, 0, false, true, true};     // reverse, NO pushbutton on GPIO 12, low state when pressed
+Button buttonRev = {26, 0, 0, false, true, true};     // reverse, NO pushbutton on GPIO 12, low state when pressed
 
 uint8_t receiverMacAddress[] = {0x88,0x13,0xBF,0x63,0x72,0x50};  
 esp_now_control_data_t controlData;                   // data packet to send to drive system
@@ -71,7 +71,7 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 
 // added content
 Button buttonLeft = {32, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
-Button buttonRight = {13, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
+Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
 int goodCount = 0;                                     // overall wanted bead counter
@@ -198,10 +198,10 @@ void loop() {
       controlData.dir = 1;
       }
       else if (!buttonRev.state) {                    // reverse pushbutton pressed
-        controlData.dir = -1;
+      controlData.dir = -1;
       }
       else {                                          // no input, stop
-        controlData.dir = 0;
+      controlData.dir = 0;
     }
     
     // left and right button operation
@@ -210,13 +210,13 @@ void loop() {
       } else {                                         
       controlData.left = 0;
       }
-      if (!buttonRight.state) {                         // right button
+      if (!buttonRight.state) {                       // right button
       controlData.right = 1;
       } else {             
       controlData.right = 0;
     }
   }
-  Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper);
+  // Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper);
 }
 
 void failReboot() {

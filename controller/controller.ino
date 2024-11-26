@@ -62,7 +62,7 @@ const int cMaxDroppedPackets = 20;                    // maximum number of packe
 // variables 
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint32_t commsLossCount = 0;                          // number of sequential sent packets have dropped
-Button buttonFwd = {12, 0, 0, false, true, true};     // forward, NO pushbutton on GPIO 14, low state when pressed
+Button buttonFwd = {33, 0, 0, false, true, true};     // forward, NO pushbutton on GPIO 14, low state when pressed
 Button buttonRev = {14, 0, 0, false, true, true};     // reverse, NO pushbutton on GPIO 12, low state when pressed
 
 uint8_t receiverMacAddress[] = {0x88,0x13,0xBF,0x63,0x72,0x50};  
@@ -70,8 +70,8 @@ esp_now_control_data_t controlData;                   // data packet to send to 
 esp_now_drive_data_t inData;                          // data packet from drive system
 
 // added content
-Button buttonLeft = {27, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
-Button buttonRight = {33, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
+Button buttonLeft = {32, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
+Button buttonRight = {13, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
 int goodCount = 0;                                     // overall wanted bead counter

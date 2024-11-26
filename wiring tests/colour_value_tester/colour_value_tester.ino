@@ -50,14 +50,9 @@ void loop() {
     if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
       Serial.printf(" baseline \n");
       ledcWrite(servo, 90);
-    } else if ((colourTemp <= 4000) && (colourTemp <= xxx)) {  // good or wanted values, spin left
-      if ((r <= 80) && (r >= x) && (g <= 60) && (g >= x) && (b <= x) && (b >= x)) {
+    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 653) && (r >= 117) && (g <= 695) && (g >= 108) && (b <= 563) && (b >= 91) && (c >= 324) && (c <= 900)) {
         Serial.printf(" good \n"); 
         ledcWrite(servo, 0);
-      } else {
-        Serial.printf(" bad \n");
-        ledcWrite(servo, 180);
-      }
     } else if (colourTemp = 0) {  // restart esp32 if colour sensor stops working, unknown cause
       failReboot();
     } else {  // any other value is bad, spin to the back

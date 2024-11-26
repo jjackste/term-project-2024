@@ -47,6 +47,8 @@ void loop() {
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
     Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d,", colourTemp, r, g, b, c);
 
+
+   
     if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
       Serial.printf(" baseline \n");
       ledcWrite(servo, 90);

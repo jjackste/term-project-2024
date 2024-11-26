@@ -41,13 +41,13 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
+  bool reboot;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int waterSpeed;                                     // pwm speed of water speed
-  int colourTemp;                                     // colour temp value
+  int collectorSpeed;                                     // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
 } __attribute__((packed)) esp_now_drive_data_t;
 
@@ -107,13 +107,14 @@ bool tcsFlag = 0;                                // tcs setup
 int lsTime = 0;                                  // timer count for sensor timer loop
 int colourTemp = 0;                              // colourtemp set up
 int spinDir = 0;                                 // spinDir setup
+int pwmSaver = 1;
+int pwmCounter = 0;
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
   ESP_NOW_Network_Peer(const uint8_t *mac_addr, const uint8_t *lmk = NULL)
     : ESP_NOW_Peer(mac_addr, ESPNOW_WIFI_CHANNEL, ESPNOW_WIFI_IFACE, lmk) {}
     ~ESP_NOW_Network_Peer() {}
-
   bool begin() {
     if (!add()) {
       log_e("Failed to initialize ESP-NOW or register the peer");
@@ -121,7 +122,6 @@ public:
     }
       return true;
     }
-
   bool send_message(const uint8_t *data, size_t len) {
     if (data == NULL || len == 0) {
       log_e("Data to be sent is NULL or has a length of 0");
@@ -129,8 +129,6 @@ public:
     }
       return send(data, len);
     }
-
-
   void onReceive(const uint8_t *data, size_t len, bool broadcast) {
     if (len == 0)                                       // if empty packet
     {
@@ -138,16 +136,14 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
     #ifdef PRINT_INCOMING
-      Serial.printf("f/r: %d, drveSpeed: %d, left: %d, right: %d,  gate: %d, time: %d\n", inData.dir, inData.driveSpeed, inData.left, inData.right, inData.hopper, inData.time);
+      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, reboot: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.reboot);
     #endif
     }
-  
-  
   void onSent(bool success) {
     if (success) {
     #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("water pwm: %d, colour temp: %d, result: %d\n", driveData.waterSpeed, driveData.colourTemp, driveData.spinDir);
+        Serial.printf("time: %d, spin dir: %d, collector speed: %d\n", driveData.time, driveData.spinDir, driveData.collectorSpeed);
     #endif
       commsLossCount = 0;
     }
@@ -155,7 +151,6 @@ public:
       commsLossCount++;
     }
     }
-  
 };
 
 ESP_NOW_Network_Peer *peer;
@@ -198,21 +193,30 @@ void setup() {
     pinMode(encoder[k].chanB, INPUT);                 
     attachInterruptArg(encoder[k].chanA, encoderISR, &encoder[k], RISING);
     }
+
+  // initialize servo pins
   ledcAttach(sorterPin, 50, 16);                    // setup sorter pin for 50 Hz, 16-bit resolution
   ledcAttach(gatePin, 50, 16);                      // setup hopper gate pin for 50 Hz, 16-bit resolution
+
+  // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  if (tcs.begin()) {
-    Serial.printf("Found TCS34725 colour sensor\n");
-    tcsFlag = true;
-    digitalWrite(cTCSLED, 1);                         // turn on onboard LED 
-    } else {
-    Serial.printf("No TCS34725 found ... check your connections\n");
-    tcsFlag = false;
-    }
+  // initial servo positions
+  ledcWrite(sorterPin, degreesToDutyCycle(90));
+  ledcWrite(gatePin, degreesToDutyCycle(85));
+
+  // if (tcs.begin()) {
+  //   Serial.printf("Found TCS34725 colour sensor\n");
+  //   tcsFlag = true;
+  //   digitalWrite(cTCSLED, 1);                         // turn on onboard LED 
+  //   } else {
+  //   Serial.printf("No TCS34725 found ... check your connections\n");
+  //   tcsFlag = false;
+  //   }
 }
 
 void loop() { 
+  // motor variables
   float deltaT = 0;                                      
   int32_t pos[] = {0, 0, 0};                             
   int32_t e[] = {0, 0, 0};                               
@@ -227,8 +231,15 @@ void loop() {
   int dir[] = {1, 1, 1};                                 
 
   if (commsLossCount > cMaxDroppedPackets) {
-      failReboot();
+    Serial.printf("com loss reboot");
+    failReboot();
   }
+
+  // intilaize reboot button from controller in case of emergency
+  // if (inData.reboot = 1) {
+  //   Serial.printf("button reboot");
+  //   failReboot();
+  // }
 
   noInterrupts();                                     
   for (int k = 0; k < cNumMotors; k++) {
@@ -240,45 +251,46 @@ void loop() {
   ledcWrite(gatePin, degreesToDutyCycle(inData.hopper)); // hopper gate control for depositing, 
 
   // sorter time loop, sense and sort 
-  uint32_t cTime = millis();                       // capture current time in milliseconds
-  if (cTime - lsTime > 1000) {                     // wait ~1 s
-    lsTime = cTime;
-    tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
-    colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-    // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
+  // uint32_t cTime = millis();                       // capture current time in milliseconds
+  // if (cTime - lsTime > 1000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
+  //   lsTime = cTime;
+  //   tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
+  //   colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
+  //   // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
 
-    // sorter servo control
-    if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
-      Serial.printf(" baseline \n");
-      ledcWrite(servo, 90);
-      spinDir = 0;
-    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
-      Serial.printf(" good \n"); 
-      ledcWrite(servo, 0);
-      spinDir = 1;
-    } else if (colourTemp = 0) {  // restart esp32 if colour sensor stops working, unknown cause
-      failReboot();
-    } else {  // any other value is bad, spin to the back
-      Serial.printf(" bad \n");
-      ledcWrite(servo, 180);
-      spinDir = 2;
-    }
-    driveData.spinDir = spinDir;
-  }
+  //   // sorter servo control
+  //   if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
+  //     Serial.printf(" baseline \n");
+  //     ledcWrite(sorterPin, 90);        // spin or stay in the middle
+  //     spinDir = 0;                 // set spin direction to 0
+  //   } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
+  //     Serial.printf(" good \n"); 
+  //     ledcWrite(sorterPin, 0);         // spin relative to the left, drop off in hopper
+  //     spinDir = 1;                 // set spin direction to 1 
+  //   } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
+  //     failReboot();
+  //   } else {                       // any other value is bad, spin to the back
+  //     Serial.printf(" bad \n");
+  //     ledcWrite(sorterPin, 180);       // spin right, releasing bead out of the back
+  //     spinDir = 2;                 // set spin direction to 2
+  //   }
+  //   driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping
+  // }
 
-  // dc motor loop
+  // dc motor loop, both collection and drivetrain
   uint32_t curTime = micros();
   if (curTime - lastTime > 10000) {
     deltaT = ((float) (curTime - lastTime)) / 1.0e6;
     lastTime = curTime;
-    driveData.time = curTime;                                  // update transmission time
+    driveData.time = curTime;                                 
 
-    // water wheel motor driver
+    // collection motor driver, utilize variables from lab with a 3rd dc motor 
     velEncoder[2] = ((float) pos[2] - (float) lastEncoder[2]) / deltaT; 
     lastEncoder[2] = pos[2];                        
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
-    posChange[2] = 2.2;                                         // set with calculated speed for optimal collection speed
+    posChange[2] = 2.2 * pwmSaver;                                         // set with calculated rpm for optimal collection speed
+    Serial.println(posChange[2]);
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];
 
@@ -293,10 +305,20 @@ void loop() {
       u[2] = cMaxSpeedInCounts;                     
     }
     pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM);  
-    driveData.waterSpeed = pwm[2];                              // send calculated pwm back to controller
+    Serial.printf("collector speed: %d\n", pwm[2]);
+    driveData.collectorSpeed = pwm[2];                              // send calculated pwm back to controller for troubleshooting
+
+    // motor runs at max pwm if stuck, and only slows down if reset, block to keep value under 200
+    if (pwm[2] >= 200) { // pwm should be -160, 200 indicates an issue
+      pwmSaver = 0;      // used to set pos change to 0, reseting encorder pos
+      pwmCounter++;      // counter to only run x times
+      } else if (pwmCounter = 10) { // if counter reaches 10, restart pos change back to desired speed
+      pwmSaver = 1;
+      pwmCounter = 0;
+    }
 
     if (commsLossCount < cMaxDroppedPackets / 4) {
-      setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]); 
+      setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]);             // run motor at selected direction and selected speed
       }
     else {
       setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       
@@ -309,11 +331,11 @@ void loop() {
       velMotor[k] = velEncoder[k] / cCountsRev * 60;
 
       if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
-          posChange[0] = inData.driveSpeed;           // over ride the inData.dir * motorSpeed to force the same direction of the motors
-          posChange[1] = -inData.driveSpeed;          // because lower if k == 0 target = +/- targetF case, the directions have to be flopped
+          posChange[0] =  inData.driveSpeed;           // over ride the inData.dir * motorSpeed to force the direction of the motors
+          posChange[1] = -inData.driveSpeed;          
       } else if (inData.right && inData.dir == 0) {
           posChange[0] = -inData.driveSpeed;
-          posChange[1] = inData.driveSpeed;
+          posChange[1] =  inData.driveSpeed;
       } else {
         posChange[k] = (float) (inData.dir * inData.driveSpeed); // update with maximum speed // use direction coming in from controller
       }
@@ -352,7 +374,6 @@ void loop() {
 
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]);
-        Serial.printf("left speed: , right speed")
       }
       else {
         setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);       

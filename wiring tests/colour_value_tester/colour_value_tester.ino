@@ -13,6 +13,7 @@ uint16_t r, g, b, c;
 int lsTime = 0;
 int lsTime2 = 0;
 int colourTemp = 0;
+int lux = 0;
 int servo = 25;
 int pot = 26;
 const int cMinDutyCycle = 1700;  // duty cycle for 0 degrees
@@ -45,6 +46,7 @@ void loop() {
     digitalWrite(cTCSLED, 0);
 
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);
+    lux = tcs.calculateLux;
     Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d,", colourTemp, r, g, b, c);
    
     if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air

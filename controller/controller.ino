@@ -10,7 +10,7 @@
 // control hopper gate control
 //
 
-#define PRINT_SEND_STATUS
+// #define PRINT_SEND_STATUS
 // #define PRINT_INCOMING                                
 
 #include <Arduino.h>
@@ -30,13 +30,13 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
+  bool reboot;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int waterSpeed;                                     // pwm speed of water speed
-  int colourTemp;                                     // colour temp value
+  int collectorSpeed;                                     // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
 } __attribute__((packed)) esp_now_drive_data_t;
 
@@ -55,7 +55,7 @@ void failReboot();
 void ARDUINO_ISR_ATTR buttonISR(void* arg);
 
 // constants
-const int cStatusLED = 26;                            // GPIO pin of communication status LED
+const int cStatusLED = 2;                            // GPIO pin of communication status LED
 const int cDebounceDelay = 20;                        // button debounce delay in milliseconds
 const int cMaxDroppedPackets = 20;                    // maximum number of packets allowed to drop
 
@@ -72,10 +72,12 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 // added content
 Button buttonLeft = {32, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
+Button buttonReboot = {14, 0, 0, false, true, true};
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
 int goodCount = 0;                                     // overall wanted bead counter
 int badCount = 0;                                      // overall bad bead counter
+
 
 // classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -105,7 +107,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));
     #ifdef PRINT_INCOMING
-        Serial.printf("time: %d, colour temp: %d, spin dir: %d, collector speed: %d \n", inData.time, inData.colourTemp, inData.spinDir, inData.waterSpeed);
+        Serial.printf("time: %d, spin dir: %d, collector speed: %d\n", inData.time, inData.spinDir, inData.collectorSpeed);
     #endif
     }
   
@@ -150,6 +152,9 @@ void setup() {
   attachInterruptArg(buttonLeft.pin, buttonISR, &buttonLeft, CHANGE);   // Configure left pushbutton ISR to trigger on change
   pinMode(buttonRight.pin, INPUT_PULLUP);                               // right button
   attachInterruptArg(buttonRight.pin, buttonISR, &buttonRight, CHANGE); // Configure right pushbutton ISR to trigger on change
+
+  pinMode(buttonReboot.pin, INPUT_PULLUP);                               // reboot button
+  attachInterruptArg(buttonReboot.pin, buttonISR, &buttonReboot, CHANGE); // Configure reboot pushbutton ISR to trigger on change
 
   if (!ESP_NOW.begin()) {
     Serial.printf("Failed to initialize ESP-NOW\n");
@@ -215,8 +220,21 @@ void loop() {
       } else {             
       controlData.right = 0;
     }
+
+    // in case of failure, reboot both controller and robot
+    if (!buttonReboot.state) {                        // reboot button
+      controlData.reboot = 1;
+      failReboot();
+      }
+
+    // bead counter
+    // if (inData.spinDir = 1) {
+    //   goodCount++;
+    // } else if (inData.spinDir = 2) {
+    //   badCount++;
+    // }
+    // Serial.printf("spin dir: %d, good count: %d, bad count: %d\n", inData.spinDir, goodCount, badCount);
   }
-  // Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper);
 }
 
 void failReboot() {

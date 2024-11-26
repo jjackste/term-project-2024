@@ -281,7 +281,7 @@ void loop() {
     lastEncoder[2] = pos[2];                        
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
-    posChange[2] = 10;                                         // set with calculated speed for optimal collection speed
+    posChange[2] = 2.2;                                         // set with calculated speed for optimal collection speed
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];
 
@@ -300,7 +300,6 @@ void loop() {
 
     if (commsLossCount < cMaxDroppedPackets / 4) {
       setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]); 
-      // Serial.printf("water motor pwm: %d \n", pwm[2]);
       }
     else {
       setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       

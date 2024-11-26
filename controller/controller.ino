@@ -11,7 +11,7 @@
 //
 
 #define PRINT_SEND_STATUS
-#define PRINT_INCOMING                                
+// #define PRINT_INCOMING                                
 
 #include <Arduino.h>
 #include "ESP32_NOW.h"
@@ -215,9 +215,8 @@ void loop() {
       } else {             
       controlData.right = 0;
     }
-
   }
-
+  Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper);
 }
 
 void failReboot() {

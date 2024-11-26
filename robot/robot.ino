@@ -290,7 +290,6 @@ void loop() {
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
     posChange[2] = 2.2 * pwmSaver;                                         // set with calculated rpm for optimal collection speed
-    Serial.println(posChange[2]);
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];
 
@@ -305,7 +304,6 @@ void loop() {
       u[2] = cMaxSpeedInCounts;                     
     }
     pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM);  
-    Serial.printf("collector speed: %d\n", pwm[2]);
     driveData.collectorSpeed = pwm[2];                              // send calculated pwm back to controller for troubleshooting
 
     // motor runs at max pwm if stuck, and only slows down if reset, block to keep value under 200

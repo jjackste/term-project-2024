@@ -41,13 +41,14 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  bool reboot;
+  int reboot;
+  int collectorStart;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int collectorSpeed;                                     // pwm speed of water speed
+  int collectorSpeed;                                 // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
 } __attribute__((packed)) esp_now_drive_data_t;
 
@@ -109,6 +110,7 @@ int colourTemp = 0;                              // colourtemp set up
 int spinDir = 0;                                 // spinDir setup
 int pwmSaver = 1;
 int pwmCounter = 0;
+int pwmCounter2 = 0;
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -136,7 +138,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
     #ifdef PRINT_INCOMING
-      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, reboot: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.reboot);
+      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, reboot: %d, collector: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.reboot, inData.collectorStart);
     #endif
     }
   void onSent(bool success) {
@@ -201,10 +203,6 @@ void setup() {
   // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  // initial servo positions
-  ledcWrite(sorterPin, degreesToDutyCycle(90));
-  ledcWrite(gatePin, degreesToDutyCycle(85));
-
   // if (tcs.begin()) {
   //   Serial.printf("Found TCS34725 colour sensor\n");
   //   tcsFlag = true;
@@ -231,10 +229,10 @@ void loop() {
   int dir[] = {1, 1, 1};                                 
 
   if (commsLossCount > cMaxDroppedPackets) {
-    Serial.printf("com loss reboot");
     failReboot();
   }
 
+  // Serial.println(inData.reboot);
   // intilaize reboot button from controller in case of emergency
   // if (inData.reboot = 1) {
   //   Serial.printf("button reboot");
@@ -289,7 +287,8 @@ void loop() {
     lastEncoder[2] = pos[2];                        
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
-    posChange[2] = 2.2 * pwmSaver;                                         // set with calculated rpm for optimal collection speed
+    posChange[2] = 2.2 * pwmSaver * inData.collectorStart;                                     // set with calculated rpm for optimal collection speed
+    Serial.println(posChange[2]);
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];
 
@@ -309,10 +308,8 @@ void loop() {
     // motor runs at max pwm if stuck, and only slows down if reset, block to keep value under 200
     if (pwm[2] >= 200) { // pwm should be -160, 200 indicates an issue
       pwmSaver = 0;      // used to set pos change to 0, reseting encorder pos
-      pwmCounter++;      // counter to only run x times
-      } else if (pwmCounter = 10) { // if counter reaches 10, restart pos change back to desired speed
+      } else {
       pwmSaver = 1;
-      pwmCounter = 0;
     }
 
     if (commsLossCount < cMaxDroppedPackets / 4) {
@@ -378,12 +375,13 @@ void loop() {
       }
     }
   }
+
   if (peer->send_message((const uint8_t *) &driveData, sizeof(driveData))) {
-        digitalWrite(cStatusLED, 1);
-      }
-      else {
-        digitalWrite(cStatusLED, 0);
-      }
+      digitalWrite(cStatusLED, 1);
+    }
+    else {
+      digitalWrite(cStatusLED, 0);
+    }
 }
 
 void setMotor(int dir, int pwm, int in1, int in2) {

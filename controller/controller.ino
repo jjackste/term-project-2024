@@ -10,7 +10,7 @@
 // control hopper gate control
 //
 
-// #define PRINT_SEND_STATUS
+#define PRINT_SEND_STATUS
 // #define PRINT_INCOMING                                
 
 #include <Arduino.h>
@@ -30,13 +30,14 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  bool reboot;
+  int reboot;
+  int collectorStart;
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
-  int collectorSpeed;                                     // pwm speed of water speed
+  int collectorSpeed;                                 // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
 } __attribute__((packed)) esp_now_drive_data_t;
 
@@ -73,10 +74,13 @@ esp_now_drive_data_t inData;                          // data packet from drive 
 Button buttonLeft = {32, 0, 0, false, true, true};     // left, NO pushbutton on GPIO 13, low state when pressed
 Button buttonRight = {27, 0, 0, false, true, true};    // right, NO pushbutton on GPIO 27, low state when pressed
 Button buttonReboot = {14, 0, 0, false, true, true};
+Button buttonCollector = {25, 0, 0, false, true, true};
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
 int goodCount = 0;                                     // overall wanted bead counter
 int badCount = 0;                                      // overall bad bead counter
+int butCount = 0;
+int collectorStatus = 0;
 
 
 // classes
@@ -115,7 +119,7 @@ public:
     if (success) {
     #ifdef PRINT_SEND_STATUS
           log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-          Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper); // troubleshooting
+          Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d, reboot: %d, start: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper, controlData.reboot, controlData.collectorStart); // troubleshooting
     #endif
         commsLossCount = 0;
       }
@@ -153,8 +157,13 @@ void setup() {
   pinMode(buttonRight.pin, INPUT_PULLUP);                               // right button
   attachInterruptArg(buttonRight.pin, buttonISR, &buttonRight, CHANGE); // Configure right pushbutton ISR to trigger on change
 
+  // reboot button initialize
   pinMode(buttonReboot.pin, INPUT_PULLUP);                               // reboot button
   attachInterruptArg(buttonReboot.pin, buttonISR, &buttonReboot, CHANGE); // Configure reboot pushbutton ISR to trigger on change
+
+  // collector motor button initialize
+  pinMode(buttonCollector.pin, INPUT_PULLUP);                               // reboot button
+  attachInterruptArg(buttonCollector.pin, buttonISR, &buttonCollector, CHANGE); // Configure reboot pushbutton ISR to trigger on change
 
   if (!ESP_NOW.begin()) {
     Serial.printf("Failed to initialize ESP-NOW\n");
@@ -196,7 +205,7 @@ void loop() {
 
     // hopper gate control
     int gateVal = analogRead(gatePotPin);                           // gate pot value read
-    controlData.hopper = map(gateVal, 0, 4095, 85, 180);            // scale raw pot value into degrees, range from 90 to 180 degrees
+    controlData.hopper = map(gateVal, 0, 4095, 85, 180);            // scale raw pot value into degrees, range from 85 to 180 degrees
 
     // forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed
@@ -225,7 +234,17 @@ void loop() {
     if (!buttonReboot.state) {                        // reboot button
       controlData.reboot = 1;
       failReboot();
+      } else {             
+      controlData.reboot = 0;
       }
+    
+    // collector motor runs at max and wont turn down unless rebooted, add button to switch on/off collector motor
+    if (!buttonCollector.state) {                        
+      collectorStatus = 1;
+      } else {
+        collectorStatus = 0;
+      }
+      controlData.collectorStart = collectorStatus;
 
     // bead counter
     // if (inData.spinDir = 1) {

@@ -107,8 +107,6 @@ bool tcsFlag = 0;                                // tcs setup
 int lsTime = 0;                                  // timer count for sensor timer loop
 int colourTemp = 0;                              // colourtemp set up
 int spinDir = 0;                                 // spinDir setup
-int pwmSaver = 1;
-int runNumber = 1;
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -201,9 +199,6 @@ void setup() {
   // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  // set collector motor to off
-  setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);
-
   if (tcs.begin()) {
     Serial.printf("Found TCS34725 colour sensor\n");
     tcsFlag = true;
@@ -243,31 +238,31 @@ void loop() {
   ledcWrite(gatePin, degreesToDutyCycle(inData.hopper)); // hopper gate control for depositing, 
 
   // sorter time loop, sense and sort 
-  // uint32_t cTime = millis();                       // capture current time in milliseconds
-  // if (cTime - lsTime > 1000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
-  //   lsTime = cTime;
-  //   tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
-  //   colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-  //   // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
+  uint32_t cTime = millis();                       // capture current time in milliseconds
+  if (cTime - lsTime > 1000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
+    lsTime = cTime;
+    tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
+    colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
+    // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
 
-  //   // sorter servo control
-  //   if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
-  //     Serial.printf(" baseline \n");
-  //     ledcWrite(sorterPin, 90);        // spin or stay in the middle
-  //     spinDir = 0;                 // set spin direction to 0
-  //   } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
-  //     Serial.printf(" good \n"); 
-  //     ledcWrite(sorterPin, 0);         // spin relative to the left, drop off in hopper
-  //     spinDir = 1;                 // set spin direction to 1 
-  //   } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
-  //     failReboot();
-  //   } else {                       // any other value is bad, spin to the back
-  //     Serial.printf(" bad \n");
-  //     ledcWrite(sorterPin, 180);       // spin right, releasing bead out of the back
-  //     spinDir = 2;                 // set spin direction to 2
-  //   }
-  //   driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping
-  // }
+    // sorter servo control
+    if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
+      Serial.printf(" baseline \n");
+      ledcWrite(sorterPin, 90);        // spin or stay in the middle
+      spinDir = 0;                 // set spin direction to 0
+    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
+      Serial.printf(" good \n"); 
+      ledcWrite(sorterPin, 0);         // spin relative to the left, drop off in hopper
+      spinDir = 1;                 // set spin direction to 1 
+    } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
+      failReboot();
+    } else {                       // any other value is bad, spin to the back
+      Serial.printf(" bad \n");
+      ledcWrite(sorterPin, 180);       // spin right, releasing bead out of the back
+      spinDir = 2;                 // set spin direction to 2
+    }
+    driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping
+  }
 
   // dc motor loop, both collection and drivetrain
   uint32_t curTime = micros();
@@ -281,7 +276,7 @@ void loop() {
     lastEncoder[2] = pos[2];                        
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
-    posChange[2] = 2.2 * pwmSaver * inData.collectorStart;                                     // set with calculated rpm for optimal collection speed
+    posChange[2] = 2.2 * inData.collectorStart;                                     // set with calculated rpm for optimal collection speed
     Serial.println(posChange[2]);
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];

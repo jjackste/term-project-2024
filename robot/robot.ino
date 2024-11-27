@@ -41,7 +41,6 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int reboot;
   int collectorStart;
 } __attribute__((packed)) esp_now_control_data_t;
 
@@ -137,7 +136,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
     #ifdef PRINT_INCOMING
-      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, reboot: %d, collector: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.reboot, inData.collectorStart);
+      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, collector: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.collectorStart);
     #endif
     }
   void onSent(bool success) {
@@ -233,13 +232,6 @@ void loop() {
   if (commsLossCount > cMaxDroppedPackets) {
     failReboot();
   }
-
-  // Serial.println(inData.reboot);
-  // intilaize reboot button from controller in case of emergency
-  // if (inData.reboot = 1) {
-  //   Serial.printf("button reboot");
-  //   failReboot();
-  // }
 
   noInterrupts();                                     
   for (int k = 0; k < cNumMotors; k++) {

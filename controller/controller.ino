@@ -30,7 +30,6 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int reboot;
   int collectorStart;
 } __attribute__((packed)) esp_now_control_data_t;
 
@@ -77,9 +76,6 @@ Button buttonReboot = {14, 0, 0, false, true, true};
 Button buttonCollector = {25, 0, 0, false, true, true};
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
-int goodCount = 0;                                     // overall wanted bead counter
-int badCount = 0;                                      // overall bad bead counter
-int butCount = 0;
 int collectorStatus = 0;
 
 
@@ -119,7 +115,7 @@ public:
     if (success) {
     #ifdef PRINT_SEND_STATUS
           log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-          Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d, reboot: %d, start: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper, controlData.reboot, controlData.collectorStart); // troubleshooting
+          Serial.printf("dir: %d, left: %d, right: %d, drive: %d, hopper: %d, start: %d \n", controlData.dir, controlData.left, controlData.right, controlData.driveSpeed, controlData.hopper, controlData.collectorStart); // troubleshooting
     #endif
         commsLossCount = 0;
       }
@@ -245,14 +241,6 @@ void loop() {
         collectorStatus = 0;
       }
       controlData.collectorStart = collectorStatus;
-
-    // bead counter
-    // if (inData.spinDir = 1) {
-    //   goodCount++;
-    // } else if (inData.spinDir = 2) {
-    //   badCount++;
-    // }
-    // Serial.printf("spin dir: %d, good count: %d, bad count: %d\n", inData.spinDir, goodCount, badCount);
   }
 }
 

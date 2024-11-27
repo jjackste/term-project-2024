@@ -66,7 +66,7 @@ void ARDUINO_ISR_ATTR encoderISR(void* arg);
 
 // motor constants
 const int cNumDriveMotors = 2;                        // number of drive motors
-const int cIN1Pin[] = {17, 19, 15};                   // GPIO pin(s) for INT1
+const int cIN1Pin[] = {17, 19, 23};                   // GPIO pin(s) for INT1
 const int cIN2Pin[] = {16, 18, 4};                    // GPIO pin(s) for INT2
 const int cPWMRes = 8;                                // bit resolution for PWM
 const int cMinPWM = 0;                                // PWM value for minimum speed that turns motor
@@ -77,15 +77,15 @@ const int cMaxSpeedInCounts = 1600;                   // maximum encoder counts/
 const int cMaxChange = 14;                            // maximum increment in counts/cycle
 const int cMaxDroppedPackets = 20;                    // maximum number of packets allowed to drop
 const float cKp = 1.5;                                // proportional gain for PID
-const float cKi = 0.2;                                // integral gain for PID
-const float cKd = 0.8;                                // derivative gain for PID
+const float cKi = 0.1;                                // integral gain for PID   // lower to stop run away error
+const float cKd = 0.1;                                // derivative gain for PID // lower to stop run away error
 
 // variables
 uint32_t lastTime = 0;                                // last time of motor control was updated
 uint16_t commsLossCount = 0;                          // number of sequential sent packets have dropped
 Encoder encoder[] = {{25, 26, 0},                     // encoder 0 on GPIO 25 and 26, 0 position (drive)
                      {32, 33, 0},                     // encoder 1 on GPIO 32 and 33, 0 position (drive)
-                     {14, 27, 0}};                    // encoder 2 on GPIO 14 and 27, 0 position (collector)
+                     {13, 27, 0}};                    // encoder 2 on GPIO 14 and 27, 0 position (collector)
 int32_t target[] = {0, 0, 0};                         // target encoder count for motor
 int32_t lastEncoder[] = {0, 0, 0};                    // encoder count at last control cycle
 float targetF[] = {0.0, 0.0, 0.0};                    // target for motor as float
@@ -98,8 +98,8 @@ esp_now_drive_data_t driveData;                       // data packet to send to 
 // added content
 const int cNumMotors = 3;                        // number of DC motors including water wheel
 const int sorterPin = 5;                         // pin for sorter servo
-const int gatePin = 13;                          // pin for hopper gate servo
-const int cTCSLED = 23;                          // GPIO pin for LED on TCS34725
+const int gatePin = 14;                          // pin for hopper gate servo
+const int cTCSLED = 15;                          // GPIO pin for LED on TCS34725
 const int cMinDutyCycle = 1700;                  // duty cycle for 0 degrees
 const int cMaxDutyCycle = 8300;                  // duty cycle for 180 degrees  
 const int cStatusLED = 2;                        // status led
@@ -109,8 +109,7 @@ int lsTime = 0;                                  // timer count for sensor timer
 int colourTemp = 0;                              // colourtemp set up
 int spinDir = 0;                                 // spinDir setup
 int pwmSaver = 1;
-int pwmCounter = 0;
-int pwmCounter2 = 0;
+int runNumber = 1;
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -203,14 +202,17 @@ void setup() {
   // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  // if (tcs.begin()) {
-  //   Serial.printf("Found TCS34725 colour sensor\n");
-  //   tcsFlag = true;
-  //   digitalWrite(cTCSLED, 1);                         // turn on onboard LED 
-  //   } else {
-  //   Serial.printf("No TCS34725 found ... check your connections\n");
-  //   tcsFlag = false;
-  //   }
+  // set collector motor to off
+  setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);
+
+  if (tcs.begin()) {
+    Serial.printf("Found TCS34725 colour sensor\n");
+    tcsFlag = true;
+    digitalWrite(cTCSLED, 1);                         // turn on onboard LED 
+    } else {
+    Serial.printf("No TCS34725 found ... check your connections\n");
+    tcsFlag = false;
+    }
 }
 
 void loop() { 
@@ -304,13 +306,6 @@ void loop() {
     }
     pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM);  
     driveData.collectorSpeed = pwm[2];                              // send calculated pwm back to controller for troubleshooting
-
-    // motor runs at max pwm if stuck, and only slows down if reset, block to keep value under 200
-    if (pwm[2] >= 200) { // pwm should be -160, 200 indicates an issue
-      pwmSaver = 0;      // used to set pos change to 0, reseting encorder pos
-      } else {
-      pwmSaver = 1;
-    }
 
     if (commsLossCount < cMaxDroppedPackets / 4) {
       setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]);             // run motor at selected direction and selected speed

@@ -243,7 +243,7 @@ void loop() {
       controlData.collectorStart = collectorStatus;
     
     // collector LED
-    if (inData.collectorSpeed >= 100) {
+    if ((inData.collectorSpeed >= 50) && (inData.collectorSpeed <= 250)) {
       digitalWrite(collectorLed, HIGH);
     } else {
       digitalWrite(collectorLed, LOW);

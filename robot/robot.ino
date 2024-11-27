@@ -106,8 +106,9 @@ uint16_t r, g, b, c;                             // tcs values setup
 bool tcsFlag = 0;                                // tcs setup 
 int lsTime = 0;                                  // timer count for sensor timer loop
 int colourTemp = 0;                              // colourtemp set up
+int lux;
 int spinDir = 0;                                 // spinDir setup
-int sCount = 0;
+int flag = 0;
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -135,7 +136,7 @@ public:
     }
     memcpy(&inData, data, sizeof(inData));              // store drive data from controller
     #ifdef PRINT_INCOMING
-      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, collector: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.collectorStart);
+      Serial.printf("time: %d, f/r: %d, driveSpeed: %d, hopper: %d, left: %d, right: %d, collector on/off: %d\n", inData.time, inData.dir, inData.driveSpeed, inData.hopper, inData.left, inData.right, inData.collectorStart);
     #endif
     }
   void onSent(bool success) {
@@ -159,6 +160,8 @@ void setup() {
   while (!Serial) {                                   
     delay(10);                                        
     }
+  
+  // esp wifi setup
   WiFi.mode(WIFI_STA);                                
   WiFi.setChannel(ESPNOW_WIFI_CHANNEL);               
   while (!WiFi.STA.started()) {                       
@@ -166,12 +169,10 @@ void setup() {
    }
   Serial.print("MAC address for drive "); 
   Serial.println(WiFi.macAddress());                  
-
   if (!ESP_NOW.begin()) {
     Serial.printf("Failed to initialize ESP-NOW\n");
     failReboot();
    }
-  
   peer = new ESP_NOW_Network_Peer(receiverMacAddress);
   if (peer == nullptr || !peer->begin()) {
     Serial.printf("Failed to create or register the controller peer\n");
@@ -185,6 +186,7 @@ void setup() {
   memset(&inData, 0, sizeof(inData));                 
   memset(&driveData, 0, sizeof(driveData));           
 
+  // dc motor setup
   for (int k = 0; k < cNumMotors; k++) {
     ledcAttach(cIN1Pin[k], cPWMFreq, cPWMRes);        
     ledcAttach(cIN2Pin[k], cPWMFreq, cPWMRes);        
@@ -200,9 +202,11 @@ void setup() {
   // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  // sorter servo start at baseline 90
-  ledcWrite(sorterPin, degreesToDutyCycle(95));
+  // servo starting at baseline 
+  ledcWrite(sorterPin, degreesToDutyCycle(90));
+  ledcWrite(gatePin, degreesToDutyCycle(85));
 
+  // tcs setup
   if (tcs.begin()) {
     Serial.printf("Found TCS34725 colour sensor\n");
     tcsFlag = true;
@@ -214,6 +218,7 @@ void setup() {
 }
 
 void loop() { 
+
   // motor variables
   float deltaT = 0;                                      
   int32_t pos[] = {0, 0, 0};                             
@@ -228,10 +233,12 @@ void loop() {
   int pwm[] = {0, 0, 0};                                 
   int dir[] = {1, 1, 1};                                 
 
+  // reboot device if communication is lost
   if (commsLossCount > cMaxDroppedPackets) {
     failReboot();
   }
 
+  // block interupts from ruining encorder positioning
   noInterrupts();                                     
   for (int k = 0; k < cNumMotors; k++) {
     pos[k] = encoder[k].pos;                          
@@ -241,41 +248,44 @@ void loop() {
   // hopper gate control
   ledcWrite(gatePin, degreesToDutyCycle(inData.hopper)); // hopper gate control for depositing, 
 
-  // sorter time loop, sense and sort 
+  // sort and sense loop
   uint32_t cTime = millis();                       // capture current time in milliseconds
   if (cTime - lsTime > 1000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
     lsTime = cTime;
     
-    if (sCount == 1) {
-      ledcWrite(sorterPin, degreesToDutyCycle(95)); 
-      Serial.println(sCount);
-      sCount = 0;
-      spinDir = 0;
-    }
+    // check if at baseline or not, only scans if at baseline
+    if (flag == 0) {  
 
-    if (spinDir == 0) {
+      // colour sensor 
       tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
       colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-      Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d", colourTemp, r, g, b, c); // troubeshooting help
-    }
+      lux = tcs.calculateLux(r, g, b);
+      Serial.printf("colour temp: %d, lux: %d, r: %d, g: %d, b: %d, c: %d", colourTemp, lux, r, g, b, c);   // troubeshooting help
+      
+      // sorting logic and servo control
+      if ((c >= 1) && (c <= 210)) {  // baseline scan
+          Serial.printf(" baseline \n");
+          ledcWrite(sorterPin, degreesToDutyCycle(90));    
+          spinDir = 0;                 
+          flag = 0;
+      } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) { 
+          Serial.printf(" good \n"); 
+          ledcWrite(sorterPin, degreesToDutyCycle(0));
+          spinDir = 1;  
+          flag = 1;              
+      } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
+          failReboot();                
+      } else {  // bad scan
+          Serial.printf(" bad \n");
+          ledcWrite(sorterPin, degreesToDutyCycle(180));   
+          spinDir = 2;
+          flag = 1;
+      }
 
-    // sorter servo control
-    if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
-      Serial.printf(" baseline \n");
-      ledcWrite(sorterPin, degreesToDutyCycle(95));    // spin or stay in the middle
-      spinDir = 0;                 // set spin direction to 0
-    } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
-      Serial.printf(" good \n"); 
-      ledcWrite(sorterPin, degreesToDutyCycle(0));     // spin relative to the left, drop off in hopper
-      sCount = 1;
-      spinDir = 1;                 // set spin direction to 1 
-    } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
-      failReboot();                
-    } else {  // set spin direction to 2
-      Serial.printf(" bad \n");
-      ledcWrite(sorterPin, degreesToDutyCycle(180));   // spin right, releasing bead out of the back
-      sCount = 1;
-      spinDir = 2;                 // set spin direction to 2
+    } else {                                           // if flag is triggered, return to baseline for next round
+      ledcWrite(sorterPin, degreesToDutyCycle(90));    // spin or stay in the middle
+      spinDir = 0;                 
+      flag = 0;
     }
     driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping
   }
@@ -292,7 +302,7 @@ void loop() {
     lastEncoder[2] = pos[2];                        
     velMotor[2] = velEncoder[2] / cCountsRev * 60;  
 
-    posChange[2] = 2.2 * inData.collectorStart;                                     // set with calculated rpm for optimal collection speed
+    posChange[2] = 2.2 * inData.collectorStart;                     // set with calculated rpm for optimal collection speed * variable to turn on/off wheel
     targetF[2] = targetF[2] + posChange[2];         
     target[2] = (int32_t) targetF[2];
 
@@ -307,10 +317,10 @@ void loop() {
       u[2] = cMaxSpeedInCounts;                     
     }
     pwm[2] = map(u[2], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM);  
-    driveData.collectorSpeed = pwm[2];                              // send calculated pwm back to controller for troubleshooting
+    driveData.collectorSpeed = pwm[2];                              // send calculated pwm back to controller 
 
     if (commsLossCount < cMaxDroppedPackets / 4) {
-      setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]);             // run motor at selected direction and selected speed
+      setMotor(-1, pwm[2], cIN1Pin[2], cIN2Pin[2]);                 // run motor at selected direction and selected speed
       }
     else {
       setMotor(0, 0, cIN1Pin[2], cIN2Pin[2]);       
@@ -322,23 +332,17 @@ void loop() {
       lastEncoder[k] = pos[k];                        
       velMotor[k] = velEncoder[k] / cCountsRev * 60;
 
-      if (inData.left && inData.dir == 0) {           // if case switcher to see if only left or right button pressed w/o any froward or revers
-          posChange[0] =  inData.driveSpeed;           // over ride the inData.dir * motorSpeed to force the direction of the motors
+      if (inData.left && inData.dir == 0) {           // if both left and direction button are not pressed, i.e only right button
+          posChange[0] =  inData.driveSpeed;          // spin motors in opposite direction for tank steer
           posChange[1] = -inData.driveSpeed;          
-      } else if (inData.right && inData.dir == 0) {
-          posChange[0] = -inData.driveSpeed;
+      } else if (inData.right && inData.dir == 0) {   // if both right and direction button are not pressed, i.e only left button
+          posChange[0] = -inData.driveSpeed;          // spin motors in other opposite direction for tank steer
           posChange[1] =  inData.driveSpeed;
       } else {
-        posChange[k] = (float) (inData.dir * inData.driveSpeed); // update with maximum speed // use direction coming in from controller
+          posChange[k] = (float) (inData.dir * inData.driveSpeed); // baseline values
       }
-      targetF[k] = targetF[k] + posChange[k];         // set new target position
-
-      if (k == 0) {                                   // assume differential drive
-        target[k] = (int32_t) targetF[k];             // motor 1 spins one way
-      }
-      else {
-        target[k] = (int32_t) targetF[k];             // motor 2 spins in opposite direction
-      }
+      targetF[k] = targetF[k] + posChange[k];         // update floating target to get previous floating target plus desired position 
+      target[k] = (int32_t) targetF[k];               // update target to targetF
 
       e[k] = target[k] - pos[k];                      
       dedt[k] = ((float) e[k]- ePrev[k]) / deltaT;    
@@ -358,7 +362,7 @@ void loop() {
 
       pwm[k] = map(u[k], 0, cMaxSpeedInCounts, cMinPWM, cMaxPWM); 
 
-      if (inData.left && inData.dir != 0) {           // if left and either front or back, kill power to one side    
+      if (inData.left && inData.dir != 0) {           // if left and either front or back, kill power to other side    
         pwm[0] = 0;
       } else if (inData.right && inData.dir != 0) {   // if right and either front or back, kill power to other side
         pwm[1] = 0;

@@ -107,7 +107,7 @@ void loop() {
   interrupts();                                       
 
   int driveSpeed = analogRead(34);                       // drive pot value read
-  int driveSpeed2 = map(driveSpeed, 0, 4095, 0, 10);
+  int driveSpeed2 = map(driveSpeed, 0, 4095, 0, 14);
 
   // dc motor loop, both collection and drivetrain
   uint32_t curTime = micros();
@@ -125,7 +125,6 @@ void loop() {
     target[2] = (int32_t) targetF[2];
 
     e[2] = target[2] - pos[2];
-    // if ( e[2] >= )
     Serial.println(e[2]);
     dedt[2] = ((float) e[2]- ePrev[2]) / deltaT;    
     eIntegral[2] = eIntegral[2] + e[2] * deltaT;    

@@ -77,7 +77,7 @@ Button buttonCollector = {25, 0, 0, false, true, true};
 int drivePotPin = 34;                                  // motor pot pin
 int gatePotPin = 35;                                   // gate pot pin
 int collectorStatus = 0;
-
+int collectorLed = 21;
 
 // classes
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
@@ -161,6 +161,9 @@ void setup() {
   pinMode(buttonCollector.pin, INPUT_PULLUP);                               // reboot button
   attachInterruptArg(buttonCollector.pin, buttonISR, &buttonCollector, CHANGE); // Configure reboot pushbutton ISR to trigger on change
 
+  // collector status led
+  pinMode(collectorLed, OUTPUT);
+
   if (!ESP_NOW.begin()) {
     Serial.printf("Failed to initialize ESP-NOW\n");
     failReboot();
@@ -228,19 +231,23 @@ void loop() {
 
     // in case of failure, reboot both controller and robot
     if (!buttonReboot.state) {                        // reboot button
-      controlData.reboot = 1;
       failReboot();
-      } else {             
-      controlData.reboot = 0;
       }
     
     // collector motor runs at max and wont turn down unless rebooted, add button to switch on/off collector motor
     if (!buttonCollector.state) {                        
       collectorStatus = 1;
       } else {
-        collectorStatus = 0;
+      collectorStatus = 0;
       }
       controlData.collectorStart = collectorStatus;
+    
+    // collector LED
+    if (inData.collectorSpeed >= 100) {
+      digitalWrite(collectorLed, HIGH);
+    } else {
+      digitalWrite(collectorLed, LOW);
+    }
   }
 }
 

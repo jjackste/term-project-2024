@@ -243,22 +243,22 @@ void loop() {
     lsTime = cTime;
     tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
     colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-    // Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
+    Serial.printf("colour temp: %d, r: %d, g: %d, b: %d, c: %d\n", colourTemp, r, g, b, c); // troubeshooting help
 
     // sorter servo control
     if ((c >= 1) && (c <= 210)) {  // baseline values for servo to stay in middle, either after scanning slide face or open air
       Serial.printf(" baseline \n");
-      ledcWrite(sorterPin, 90);        // spin or stay in the middle
+      ledcWrite(sorterPin, 90);    // spin or stay in the middle
       spinDir = 0;                 // set spin direction to 0
     } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) {
       Serial.printf(" good \n"); 
-      ledcWrite(sorterPin, 0);         // spin relative to the left, drop off in hopper
+      ledcWrite(sorterPin, 0);     // spin relative to the left, drop off in hopper
       spinDir = 1;                 // set spin direction to 1 
     } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
       failReboot();
     } else {                       // any other value is bad, spin to the back
       Serial.printf(" bad \n");
-      ledcWrite(sorterPin, 180);       // spin right, releasing bead out of the back
+      ledcWrite(sorterPin, 180);   // spin right, releasing bead out of the back
       spinDir = 2;                 // set spin direction to 2
     }
     driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping

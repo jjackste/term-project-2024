@@ -1,5 +1,4 @@
-int gatePin = 25;
-int gatePot = 26;
+int gatePin = 5;
 const int cMinDutyCycle = 1700;  // duty cycle for 0 degrees
 const int cMaxDutyCycle = 8300;  // duty cycle for 180 degrees
 
@@ -11,11 +10,10 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  int potVal = analogRead(gatePot);
-  int gateVal = map(potVal, 0, 4095, 85, 180);
-  int degree = degreesToDutyCycle(gateVal);
-  ledcWrite(gatePin, degree);  // hopper gate control for depositing
-  Serial.printf("analog value: %d, mapped value: %d, degree: %d\n", potVal, gateVal, degree);
+  ledcWrite(gatePin, degreesToDutyCycle(0));  // hopper gate control for depositing
+  delay(500);
+  ledcWrite(gatePin, degreesToDutyCycle(180)); 
+  delay(500);
 }
 
 long degreesToDutyCycle(int deg) {

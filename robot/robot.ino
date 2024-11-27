@@ -49,6 +49,8 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
+  int pwmL;
+  int pwmR;
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // encoder structure
@@ -106,9 +108,10 @@ uint16_t r, g, b, c;                             // tcs values setup
 bool tcsFlag = 0;                                // tcs setup 
 int lsTime = 0;                                  // timer count for sensor timer loop
 int colourTemp = 0;                              // colourtemp set up
-int lux;
+int lux = 0;                                         // lux set up
 int spinDir = 0;                                 // spinDir setup
-int flag = 0;
+int flag = 0;                                    // intial flag at 0 to scan on boot
+
 
 class ESP_NOW_Network_Peer : public ESP_NOW_Peer {
 public:
@@ -203,8 +206,8 @@ void setup() {
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
   // servo starting at baseline 
-  ledcWrite(sorterPin, degreesToDutyCycle(90));
-  ledcWrite(gatePin, degreesToDutyCycle(85));
+  ledcWrite(sorterPin, degreesToDutyCycle(97));
+  ledcWrite(gatePin, degreesToDutyCycle(60));
 
   // tcs setup
   if (tcs.begin()) {
@@ -250,10 +253,10 @@ void loop() {
 
   // sort and sense loop
   uint32_t cTime = millis();                       // capture current time in milliseconds
-  if (cTime - lsTime > 1000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
+  if (cTime - lsTime > 2000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
     lsTime = cTime;
     
-    // check if at baseline or not, only scans if at baseline
+    // check if at baseline or not, only scans if at baseline, if not return to baseline
     if (flag == 0) {  
 
       // colour sensor 
@@ -261,14 +264,14 @@ void loop() {
       colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
       lux = tcs.calculateLux(r, g, b);
       Serial.printf("colour temp: %d, lux: %d, r: %d, g: %d, b: %d, c: %d", colourTemp, lux, r, g, b, c);   // troubeshooting help
-      
+
       // sorting logic and servo control
-      if ((c >= 1) && (c <= 210)) {  // baseline scan
+      if ((c >= 1) && (c <= 180)) {  // baseline scan
           Serial.printf(" baseline \n");
-          ledcWrite(sorterPin, degreesToDutyCycle(90));    
+          ledcWrite(sorterPin, degreesToDutyCycle(97));    
           spinDir = 0;                 
           flag = 0;
-      } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (r <= 300) && (r >= 100) && (g <= 300) && (g >= 95) && (b <= 200) && (b >= 75) && (c >= 275) && (c <= 1484)) { 
+      } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (lux >= 120) && (r <= 400) && (r >= 90) && (g <= 500) && (g >= 80) && (b <= 250) && (b >= 65) && (c >= 250) && (c <= 1484)) { 
           Serial.printf(" good \n"); 
           ledcWrite(sorterPin, degreesToDutyCycle(0));
           spinDir = 1;  
@@ -281,9 +284,9 @@ void loop() {
           spinDir = 2;
           flag = 1;
       }
-
     } else {                                           // if flag is triggered, return to baseline for next round
-      ledcWrite(sorterPin, degreesToDutyCycle(90));    // spin or stay in the middle
+      ledcWrite(sorterPin, degreesToDutyCycle(97));    // spin or stay in the middle
+      Serial.printf("returning\n");
       spinDir = 0;                 
       flag = 0;
     }
@@ -368,6 +371,10 @@ void loop() {
         pwm[1] = 0;
       }    
 
+      // send motor speed to controller
+      driveData.pwmL = pwm[0];
+      driveData.pwmR = pwm[1];
+      
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]);
       }

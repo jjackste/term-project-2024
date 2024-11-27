@@ -10,7 +10,7 @@
 // control hopper gate control
 //
 
-#define PRINT_SEND_STATUS
+// #define PRINT_SEND_STATUS
 // #define PRINT_INCOMING                                
 
 #include <Arduino.h>
@@ -38,6 +38,8 @@ typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
   int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
+  int pwmL;
+  int pwmR;
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // button structure
@@ -204,8 +206,8 @@ void loop() {
 
     // hopper gate control
     int gateVal = analogRead(gatePotPin);                           // gate pot value read
-    controlData.hopper = map(gateVal, 0, 4095, 85, 180);            // scale raw pot value into degrees, range from 85 to 180 degrees
-
+    controlData.hopper = map(gateVal, 0, 4095, 60, 180);            // scale raw pot value into degrees, range from 85 to 180 degrees
+    
     // forward and reverse button operation
     if (!buttonFwd.state) {                           // forward pushbutton pressed
       controlData.dir = 1;
@@ -242,12 +244,15 @@ void loop() {
       }
       controlData.collectorStart = collectorStatus;
     
-    // collector LED
-    if ((inData.collectorSpeed >= 50) && (inData.collectorSpeed <= 250)) {
-      digitalWrite(collectorLed, HIGH);
-    } else {
+    // collector status led
+    if (inData.collectorSpeed >= 130) {
       digitalWrite(collectorLed, LOW);
+    } else {
+      digitalWrite(collectorLed, HIGH);
     }
+
+    // serial print
+    Serial.printf("drive: %d, hopper: %d, left motor: %d, right motor: %d, collector speed: %d\n", controlData.driveSpeed, controlData.hopper, inData.pwmL, inData.pwmR, inData.collectorSpeed);
   }
 }
 

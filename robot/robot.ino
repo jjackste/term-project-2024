@@ -48,7 +48,6 @@ typedef struct {
 typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
-  int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
   int pwmL;
   int pwmR;
 } __attribute__((packed)) esp_now_drive_data_t;
@@ -108,8 +107,7 @@ uint16_t r, g, b, c;                             // tcs values setup
 bool tcsFlag = 0;                                // tcs setup 
 int lsTime = 0;                                  // timer count for sensor timer loop
 int colourTemp = 0;                              // colourtemp set up
-int lux = 0;                                         // lux set up
-int spinDir = 0;                                 // spinDir setup
+int lux = 0;                                     // lux set up
 int flag = 0;                                    // intial flag at 0 to scan on boot
 
 
@@ -146,7 +144,7 @@ public:
     if (success) {
     #ifdef PRINT_SEND_STATUS
         log_i("Unicast message reported as sent %s to peer " MACSTR, success ? "successfully" : "unsuccessfully", MAC2STR(addr()));
-        Serial.printf("time: %d, spin dir: %d, collector speed: %d\n", driveData.time, driveData.spinDir, driveData.collectorSpeed);
+        Serial.printf("time: %d, collector speed: %d\n", driveData.time, driveData.collectorSpeed);
     #endif
       commsLossCount = 0;
     }
@@ -268,29 +266,24 @@ void loop() {
       // sorting logic and servo control
       if ((c >= 1) && (c <= 180)) {  // baseline scan
           Serial.printf(" baseline \n");
-          ledcWrite(sorterPin, degreesToDutyCycle(97));    
-          spinDir = 0;                 
+          ledcWrite(sorterPin, degreesToDutyCycle(97));                
           flag = 0;
-      } else if ((colourTemp <= 4700) && (colourTemp >= 4000) && (lux >= 120) && (r <= 400) && (r >= 90) && (g <= 500) && (g >= 80) && (b <= 250) && (b >= 65) && (c >= 250) && (c <= 1484)) { 
-          Serial.printf(" good \n"); 
+      } else if ((colourTemp <= 4500) && (colourTemp >= 4000) && (lux >= 50) && (lux <= 300) && (r <= 225) && (r >= 80) && (g <= 550) && (g >= 110) && (b <= 450) && (b >= 65) && (c >= 250) && (c <= 1700)) { 
+          Serial.printf(" \n"); 
           ledcWrite(sorterPin, degreesToDutyCycle(0));
-          spinDir = 1;  
           flag = 1;              
       } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
           failReboot();                
       } else {  // bad scan
-          Serial.printf(" bad \n");
+          Serial.printf(" \n");
           ledcWrite(sorterPin, degreesToDutyCycle(180));   
-          spinDir = 2;
           flag = 1;
       }
     } else {                                           // if flag is triggered, return to baseline for next round
       ledcWrite(sorterPin, degreesToDutyCycle(97));    // spin or stay in the middle
-      Serial.printf("returning\n");
-      spinDir = 0;                 
+      Serial.printf("returning\n");                
       flag = 0;
     }
-    driveData.spinDir = spinDir;   // send back spin direction to controller for record keeping
   }
 
   // dc motor loop, both collection and drivetrain
@@ -374,6 +367,10 @@ void loop() {
       // send motor speed to controller
       driveData.pwmL = pwm[0];
       driveData.pwmR = pwm[1];
+
+      if ((pwm[k] == 255) && (inData.dir == 0)) {
+        setMotor(0, 0, cIN1Pin[k], cIN2Pin[k]);
+        }
       
       if (commsLossCount < cMaxDroppedPackets / 4) {
         setMotor(dir[k], pwm[k], cIN1Pin[k], cIN2Pin[k]);

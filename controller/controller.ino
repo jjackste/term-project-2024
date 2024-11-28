@@ -37,7 +37,6 @@ typedef struct {
 typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
-  int spinDir;                                        // direction of sorting spin (0 = baseline, 1 = good, 2 = bad)
   int pwmL;
   int pwmR;
 } __attribute__((packed)) esp_now_drive_data_t;

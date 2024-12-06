@@ -30,15 +30,15 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int collectorStart;
+  int collectorStart;                                 // toggle value to start and stop collection motor
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
-  int pwmL;
-  int pwmR;
+  int pwmL;                                           // pwm speed of left motor
+  int pwmR;                                           // pwm speed of right motor
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // button structure

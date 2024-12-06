@@ -41,15 +41,15 @@ typedef struct {
   int hopper;                                         // variable for hopper gate value
   bool left;                                          // variable for left button, either on or off
   bool right;                                         // variable for right button, either on or off
-  int collectorStart;
+  int collectorStart;                                 // toggle value to start and stop collection motor
 } __attribute__((packed)) esp_now_control_data_t;
 
 // drive data packet structure
 typedef struct {
   uint32_t time;                                      // time packet received
   int collectorSpeed;                                 // pwm speed of water speed
-  int pwmL;
-  int pwmR;
+  int pwmL;                                           // pwm speed of left motor
+  int pwmR;                                           // pwm speed of right motor
 } __attribute__((packed)) esp_now_drive_data_t;
 
 // encoder structure
@@ -92,11 +92,11 @@ float targetF[] = {0.0, 0.0, 0.0};                    // target for motor as flo
 
 // communication
 uint8_t receiverMacAddress[] = {0xA8,0x42,0xE3,0xCA,0xF1,0xBC};  // MAC address of controller 00:01:02:03:04:05
-esp_now_control_data_t inData;                        // control data packet from controller
-esp_now_drive_data_t driveData;                       // data packet to send to controller
+esp_now_control_data_t inData;                                   // control data packet from controller
+esp_now_drive_data_t driveData;                                  // data packet to send to controller
 
 // added content
-const int cNumMotors = 3;                        // number of DC motors including water wheel
+const int cNumMotors = 3;                        // number of DC motors, drivex2 + collector
 const int sorterPin = 5;                         // pin for sorter servo
 const int gatePin = 14;                          // pin for hopper gate servo
 const int cTCSLED = 15;                          // GPIO pin for LED on TCS34725
@@ -203,8 +203,8 @@ void setup() {
   // intialize status led
   pinMode(cStatusLED, OUTPUT);                      // configure GPIO for communication status LED as output
 
-  // servo starting at baseline 
-  ledcWrite(sorterPin, degreesToDutyCycle(97));
+  // servo starting at baseline values
+  ledcWrite(sorterPin, degreesToDutyCycle(97)); 
   ledcWrite(gatePin, degreesToDutyCycle(60));
 
   // tcs setup
@@ -247,42 +247,43 @@ void loop() {
   interrupts();                                       
 
   // hopper gate control
-  ledcWrite(gatePin, degreesToDutyCycle(inData.hopper)); // hopper gate control for depositing, 
+  ledcWrite(gatePin, degreesToDutyCycle(inData.hopper)); 
 
   // sort and sense loop
   uint32_t cTime = millis();                       // capture current time in milliseconds
-  if (cTime - lsTime > 2000) {                     // wait ~1 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
+  if (cTime - lsTime > 2000) {                     // wait ~2 s, allows for bead to fall into sensor location and then spin, and drop out before sensing again
     lsTime = cTime;
     
     // check if at baseline or not, only scans if at baseline, if not return to baseline
     if (flag == 0) {  
 
-      // colour sensor 
-      tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
-      colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
-      lux = tcs.calculateLux(r, g, b);
-      Serial.printf("colour temp: %d, lux: %d, r: %d, g: %d, b: %d, c: %d", colourTemp, lux, r, g, b, c);   // troubeshooting help
+        // colour sensor 
+        tcs.getRawData(&r, &g, &b, &c);                                                         // get raw RGBC values
+        colourTemp = tcs.calculateColorTemperature_dn40(r, g, b, c);                            // convert to arbritary constant for comparision
+        lux = tcs.calculateLux(r, g, b);  
+        // Serial.printf("colour temp: %d, lux: %d, r: %d, g: %d, b: %d, c: %d", colourTemp, lux, r, g, b, c);   // troubeshooting help
 
-      // sorting logic and servo control
-      if ((c >= 1) && (c <= 180)) {  // baseline scan
-          Serial.printf(" baseline \n");
-          ledcWrite(sorterPin, degreesToDutyCycle(97));                
-          flag = 0;
-      } else if ((colourTemp <= 4500) && (colourTemp >= 4000) && (lux >= 50) && (lux <= 300) && (r <= 225) && (r >= 80) && (g <= 550) && (g >= 110) && (b <= 450) && (b >= 65) && (c >= 250) && (c <= 1700)) { 
-          Serial.printf(" \n"); 
-          ledcWrite(sorterPin, degreesToDutyCycle(0));
-          flag = 1;              
-      } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
-          failReboot();                
-      } else {  // bad scan
-          Serial.printf(" \n");
-          ledcWrite(sorterPin, degreesToDutyCycle(180));   
-          flag = 1;
-      }
-    } else {                                           // if flag is triggered, return to baseline for next round
-      ledcWrite(sorterPin, degreesToDutyCycle(97));    // spin or stay in the middle
-      Serial.printf("returning\n");                
-      flag = 0;
+        // sorting logic and servo control
+        if ((c >= 1) && (c <= 180)) {  // baseline scan, c was the determinator between baseline black and other colours
+            Serial.printf(" baseline \n");
+            ledcWrite(sorterPin, degreesToDutyCycle(97));   // set servo to middle value         
+            flag = 0;                                       // set flag to 0 to allow for immediate rescan
+        } else if ((colourTemp <= 4500) && (colourTemp >= 4000) && (lux >= 50) && (lux <= 300) && (r <= 225) && (r >= 80) && (g <= 550) && (g >= 110) && (b <= 450) && (b >= 65) && (c >= 250) && (c <= 1700)) {  // calculated range to only select green
+            Serial.printf(" \n"); 
+            ledcWrite(sorterPin, degreesToDutyCycle(0));
+            flag = 1;                                       // set flag to 1 to wait another loop cycle before rescan
+        } else if (colourTemp = 0) {   // restart esp32 if colour sensor stops working, unknown cause
+            failReboot();                
+        } else {  // bad scan
+            Serial.printf(" \n");
+            ledcWrite(sorterPin, degreesToDutyCycle(180));   
+            flag = 1;                                       // set flag to 1 to wait another loop cycle before rescan
+        }
+        
+    } else {                                           // if flag is not triggered, return to baseline for next round
+        ledcWrite(sorterPin, degreesToDutyCycle(97));    // spin or stay in the middle
+        Serial.printf("returning\n");                
+        flag = 0;
     }
   }
 
